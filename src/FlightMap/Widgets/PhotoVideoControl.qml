@@ -119,7 +119,7 @@ Rectangle {
 
                             MouseArea {
                                 anchors.fill:   parent
-                                enabled:        _cameraInPhotoMode ? _photoCaptureIdle : true
+                                enabled:        _cameraInPhotoMode
                                 onClicked:      _camera.setCameraModeVideo()
                             }
                         }
@@ -147,7 +147,7 @@ Rectangle {
 
                             MouseArea {
                                 anchors.fill:   parent
-                                enabled:        _cameraInVideoMode ? _videoCaptureIdle : true
+                                enabled:        _cameraInVideoMode
                                 onClicked:      _camera.setCameraModePhoto()
                             }
                         }

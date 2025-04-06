@@ -273,7 +273,7 @@ void VideoManager::grabImage(const QString &imageFile)
 {
     if (imageFile.isEmpty()) {
         _imageFile = SettingsManager::instance()->appSettings()->photoSavePath();
-        _imageFile += "/" + QDateTime::currentDateTime().toString("yyyy-MM-dd_hh.mm.ss.zzz") + ".jpg";
+        _imageFile += "/" + QDateTime::currentDateTime().toString("yyyy-MM-dd_hh.mm.ss") + ".jpg";
     } else {
         _imageFile = imageFile;
     }

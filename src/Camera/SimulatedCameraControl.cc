@@ -134,6 +134,7 @@ bool SimulatedCameraControl::takePhoto()
 
     if (photoCaptureMode() == PHOTO_CAPTURE_SINGLE) {
         _vehicle->triggerSimpleCamera();
+        VideoManager::instance()->grabImage();
         _photoCaptureStatus = PHOTO_CAPTURE_IN_PROGRESS;
         emit photoCaptureStatusChanged();
         QTimer::singleShot(500, [this]() { _photoCaptureStatus = PHOTO_CAPTURE_IDLE; emit photoCaptureStatusChanged(); });
