@@ -53,4 +53,4 @@ QGroundControl is *open-source*, meaning you have the power to shape it! Whether
 
 ---
 
-With QGroundControl, you're in full command of your UAV, ready to take your missions to the next level.
+Kamera Video Kaydı ve Fotoğraf Çekilen Versiyonu. Gimbal hareketi için de komutlar eklendi.
