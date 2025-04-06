@@ -2,12 +2,27 @@ if(NOT QGC_BUILD_TESTING)
     return()
 endif()
 
-find_package(Qt6 REQUIRED COMPONENTS Core Test)
+find_package(Qt6 REQUIRED COMPONENTS Test)
 
 # if(ANDROID)
     # include(AndroidTestUtilities)
 # endif()
 
+# set(UNIT_TESTING_RESOURCES)
+# qt_add_resources(UNIT_TESTING_RESOURCES UnitTest.qrc)
+
+target_sources(${CMAKE_PROJECT_NAME}
+    PRIVATE
+        UnitTestList.cc
+        UnitTestList.h
+        # ${UNIT_TESTING_RESOURCES}
+)
+
+target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE Qt6::Test)
+
+target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
+include(CTest)
 add_custom_target(check
     COMMAND ctest --output-on-failure .
     USES_TERMINAL
@@ -118,37 +133,3 @@ add_qgc_test(VehicleLinkManagerTest)
 # add_qgc_test(LinkManagerTest)
 # add_qgc_test(SendMavCommandTest)
 # add_qgc_test(TCPLinkTest)
-
-# set(UNIT_TESTING_RESOURCES)
-# qt_add_resources(UNIT_TESTING_RESOURCES UnitTest.qrc)
-
-qt_add_library(qgctest
-    STATIC
-        UnitTestList.cc
-        UnitTestList.h
-        # ${UNIT_TESTING_RESOURCES}
-)
-
-target_link_libraries(qgctest
-    PRIVATE
-        ADSBTest
-        AnalyzeViewTest
-        CameraTest
-        CommsTest
-        FactSystemTest
-        FollowMeTest
-        GpsTest
-        MAVLinkTest
-        MissionManagerTest
-        QGC
-        QmlControlsTest
-        TerrainTest
-        UITest
-        VehicleTest
-        UtilitiesTest
-    PUBLIC
-        Qt6::Core
-        qgcunittest
-)
-
-target_include_directories(qgctest INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
