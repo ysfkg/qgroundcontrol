@@ -1,208 +1,1582 @@
-# QGroundControl Change Log
 
-Note: This file only contains high level features or important fixes.
+/****************************************************************************
+ *
+ * (c) 2009-2024 QGROUNDCONTROL PROJECT <http://www.qgroundcontrol.org>
+ *
+ * QGroundControl is licensed according to the terms in the file
+ * COPYING.md in the root of the source code directory.
+ *
+ ****************************************************************************/
 
-## 5.0 - Daily Build
+#include "VideoManager.h"
+#include "MultiVehicleManager.h"
+#include "QGCApplication.h"
+#include "QGCCameraManager.h"
+#include "QGCCorePlugin.h"
+#include "QGCLoggingCategory.h"
+#include "SettingsManager.h"
+#include "AppSettings.h"
+#include "SubtitleWriter.h"
+#include "Vehicle.h"
+#include "VideoReceiver.h"
+#include "VideoSettings.h"
+#ifdef QGC_GST_STREAMING
+#include "GStreamer.h"
+#else
+#include "GLVideoItemStub.h"
+#endif
+#ifdef QGC_QT_STREAMING
+#include "QtMultimediaReceiver.h"
+// #include "UVCReceiver.h"
+#endif
 
-* Introduced a new combined compass and attitude instrument for enhanced navigation.
-* Select between multiple instruments by clicking the instrument control on desktop or pressing and holding on mobile.
-* Updated support for Fly View and Joystick custom MAVLink actions; command file names and formats have changed—refer to QGC docs for details.
-* Added functionality for setting individual MAVLink message rates in the MAVLink Inspector.
-* Enabled support for MAVLink 2 signing.
-* Dynamic battery display that reduces the number of bars based on battery percentage, with configurable states (100%, Config 1, Config 2, Low, Critical) for clearer status indication.
-* Custom Actions changed to Mavlink Actions. The location of the actions json files has changes to the "Mavlink Actions" directory. If you were using the previous "Custom Actions" directory, move you json files to the new location.
+#ifndef QGC_DISABLE_UVC
+#include <QtCore/QPermissions>
+#include <QtMultimedia/QCameraDevice>
+#include <QtMultimedia/QMediaDevices>
+#include <QtQuick/QQuickWindow>
+#endif
 
+#include <QtCore/qapplicationstatic.h>
+#include <QtCore/QDir>
+#include <QtQml/QQmlEngine>
+#include <QtQuick/QQuickItem>
 
-## 4.1
+QGC_LOGGING_CATEGORY(VideoManagerLog, "qgc.videomanager.videomanager")
 
-### 4.1.2 - Not yet released
-* Bug: Radio setup - Fix double send of `MAV_CMD_PREFLIGHT_CALIBRATION` causing "Unable to send command" error.
+static constexpr const char *kFileExtension[VideoReceiver::FILE_FORMAT_MAX - VideoReceiver::FILE_FORMAT_MIN] = {
+    "mkv",
+    "mov",
+    "mp4"
+};
 
-### 4.1.1 - Stable
-* Fix TCP link comms
+Q_APPLICATION_STATIC(VideoManager, _videoManagerInstance);
 
-### 4.1.0
+VideoManager::VideoManager(QObject *parent)
+    : QObject(parent)
+    , _subtitleWriter(new SubtitleWriter(this))
+    , _videoSettings(SettingsManager::instance()->videoSettings())
+{
+    // qCDebug(VideoManagerLog) << Q_FUNC_INFO << this;
 
-* Support simple cameras which only support DIGICAM_CONTROL in the Photo/Video control on Fly View.
-* Load Parameters From File: Support loading parameters which don't currently existing on the vehicle.
-* Load Parameters From File: Add dialog which shows diff of file and vehicle params. Selective param upload from file.
-* Video Streaming: New camera control supports capturing individual images from the stream
-* Fly: Press and hold on arm button will change it to Force Arm. Click again to force arm.
-* VTOL: General setting for transition distance which affects Plan takeoff, landing pattern creation
-* VTOL: Much better VTOL support throughout QGC
-* Maps: Support zoom up to level 23 even if map provider doesn't provide tiles that high
-* Settings/Mavlink: Add ability to forward mavlink traffic out specified UDP port
-* Support mavlink terrain protocol which queries gcs for terrain height information. Allows planning missions with TERRAIN\_FRAME.
-* Fly: New instrument values display/editing support
-* Plan: Added new VTOL Landing Pattern support
-* Plan: Much better conversion of missions to KML for 3d visualization/verification of missions
-* Plan: New Terrain Profile display including terrain collision indications on profile and in patterns (Survey, CorridorScan, etc)
-* Fly: Rearchitect view and controls within for much better customization support in custom builds
+#ifdef QGC_GST_STREAMING
+    GStreamer::initialize();
+#endif
+}
 
-## 4.0
+VideoManager::~VideoManager()
+{
+    // qCDebug(VideoManagerLog) << Q_FUNC_INFO << this;
+}
 
-## 4.0.9 - Not yet released
+VideoManager *VideoManager::instance()
+{
+    return _videoManagerInstance();
+}
 
-* Don't auto-connect to second Cube Orange/Yellow composite port
-* Plan: Fix bugs associated with mission commands which specify and altitude but no lat/lon
-* Fix bug which could prevent view switching from working after altitude mode warning dialog would pop up
+void VideoManager::registerQmlTypes()
+{
+    (void) qmlRegisterUncreatableType<VideoManager>("QGroundControl.VideoManager", 1, 0, "VideoManager", "Reference only");
+    (void) qmlRegisterUncreatableType<VideoReceiver>("QGroundControl", 1, 0, "VideoReceiver","Reference only");
+    #ifndef QGC_GST_STREAMING
+        (void) qmlRegisterType<GLVideoItemStub>("org.freedesktop.gstreamer.Qt6GLVideoItem", 1, 0, "GstGLQt6VideoItem");
+    #endif
+}
 
-## 4.0.8 - Stable
+void VideoManager::init()
+{
+    if (_initialized) {
+        return;
+    }
 
-* iOS: Modify QGC file storage location to support new Files app
-* Mobile: Fix Log Replay status bar file selection
+    // TODO: Those connections should be Per Video, not per VideoManager.
+    (void) connect(_videoSettings->videoSource(), &Fact::rawValueChanged, this, &VideoManager::_videoSourceChanged);
+    (void) connect(_videoSettings->udpPort(), &Fact::rawValueChanged, this, &VideoManager::_videoSourceChanged);
+    (void) connect(_videoSettings->rtspUrl(), &Fact::rawValueChanged, this, &VideoManager::_videoSourceChanged);
+    (void) connect(_videoSettings->tcpUrl(), &Fact::rawValueChanged, this, &VideoManager::_videoSourceChanged);
+    (void) connect(_videoSettings->aspectRatio(), &Fact::rawValueChanged, this, &VideoManager::aspectRatioChanged);
+    (void) connect(_videoSettings->lowLatencyMode(), &Fact::rawValueChanged, this, &VideoManager::_lowLatencyModeChanged);
+    (void) connect(MultiVehicleManager::instance(), &MultiVehicleManager::activeVehicleChanged, this, &VideoManager::_setActiveVehicle);
 
-## 4.0.7 - Stable
+    int index = 0;
+    const QStringList widgetTypes = {"videoContent", "thermalVideo"};
+    Q_ASSERT(widgetTypes.length() <= _videoReceiverData.length());
+    for (VideoReceiverData &videoReceiver : _videoReceiverData) {
+        videoReceiver.index = index++;
+        videoReceiver.receiver = QGCCorePlugin::instance()->createVideoReceiver(this);
+        if (!videoReceiver.receiver) {
+            continue;
+        }
+        videoReceiver.name = widgetTypes[videoReceiver.index];
 
-* Fix video page sizing
-* Virtual Joystick: Fix right stick centering. Fix/add support for rover/sub reverse throttle support.
-* Fix display of multiple ADSB vehicles
+        (void) connect(videoReceiver.receiver, &VideoReceiver::onStartComplete, this, [this, &videoReceiver](VideoReceiver::STATUS status) {
+            qCDebug(VideoManagerLog) << "Video" << videoReceiver.index << "Start complete, status:" << status;
+            switch (status) {
+            case VideoReceiver::STATUS_OK:
+                videoReceiver.started = true;
+                if (videoReceiver.sink) {
+                    videoReceiver.receiver->startDecoding(videoReceiver.sink);
+                }
+                break;
+            case VideoReceiver::STATUS_INVALID_URL:
+            case VideoReceiver::STATUS_INVALID_STATE:
+                break;
+            default:
+                _restartVideo(videoReceiver.index);
+                break;
+            }
+        });
 
-### 4.0.6 - Stable
+        (void) connect(videoReceiver.receiver, &VideoReceiver::onStopComplete, this, [this, &videoReceiver](VideoReceiver::STATUS status) {
+            qCDebug(VideoManagerLog) << "Video" << videoReceiver.index << "Stop complete, status:" << status;
+            videoReceiver.started = false;
+            if (status == VideoReceiver::STATUS_INVALID_URL) {
+                qCDebug(VideoManagerLog) << "Invalid video URL. Not restarting";
+            } else {
+                _startReceiver(videoReceiver.index);
+            }
+        });
 
-* Analyze/Log Download - Fix download on mobile versions of QGC
-* Fly: Fix problems where Continue Mission and Change Altitude were not available after a Mission Pause.
-* PX4 Flow: Fix video display problem
+        // TODO: Create status variables for each receiver in VideoReceiverData
+        (void) connect(videoReceiver.receiver, &VideoReceiver::streamingChanged, this, [this, &videoReceiver](bool active) {
+            qCDebug(VideoManagerLog) << "Video" << videoReceiver.index << "streaming changed, active:" << (active ? "yes" : "no");
+            if (videoReceiver.index == 0) {
+                _streaming = active;
+                emit streamingChanged();
+            }
+        });
 
-### 4.0.5 - Stable
+        (void) connect(videoReceiver.receiver, &VideoReceiver::decodingChanged, this, [this, &videoReceiver](bool active) {
+            qCDebug(VideoManagerLog) << "Video" << videoReceiver.index << "decoding changed, active:" << (active ? "yes" : "no");
+            if (videoReceiver.index == 0) {
+                _decoding = active;
+                emit decodingChanged();
+            }
+        });
 
-* Solo: Fix mission upload failures
-* Plan: Fix crash when using Create Plan - Survey for fixed wing vehicle
+        (void) connect(videoReceiver.receiver, &VideoReceiver::recordingChanged, this, [this, &videoReceiver](bool active) {
+            qCDebug(VideoManagerLog) << "Video" << videoReceiver.index << "recording changed, active:" << (active ? "yes" : "no");
+            if (videoReceiver.index == 0) {
+                _recording = active;
+                if (!active) {
+                    _subtitleWriter->stopCapturingTelemetry();
+                }
+                emit recordingChanged();
+            }
+        });
 
-### 4.0.4
+        (void) connect(videoReceiver.receiver, &VideoReceiver::recordingStarted, this, [this, &videoReceiver]() {
+            qCDebug(VideoManagerLog) << "Video" << videoReceiver.index << "recording started";
+            if (videoReceiver.index == 0) {
+                _subtitleWriter->startCapturingTelemetry(_videoFile);
+            }
+        });
 
-* Mobile File Save: Fix problem with incorrect file extension being added
-* Radio Setup: Fix problem with Spektrum bind
-* Plan/Fly: Bring back waypoint number display in map items
+        (void) connect(videoReceiver.receiver, &VideoReceiver::videoSizeChanged, this, [this, &videoReceiver](QSize size) {
+            qCDebug(VideoManagerLog) << "Video" << videoReceiver.index << "resized. New resolution:" << size.width() << "x" << size.height();
+            if (videoReceiver.index == 0) {
+                _videoSize = (static_cast<quint32>(size.width()) << 16) | static_cast<quint32>(size.height());
+                emit videoSizeChanged();
+            }
+        });
 
-### 4.0.3
+        (void) connect(videoReceiver.receiver, &VideoReceiver::onTakeScreenshotComplete, this, [&videoReceiver](VideoReceiver::STATUS status) {
+            if (status == VideoReceiver::STATUS_OK) {
+                qCDebug(VideoManagerLog) << "Video" << videoReceiver.index << "screenshot taken";
+            } else {
+                qCWarning(VideoManagerLog) << "Video" << videoReceiver.index << "screenshot failed";
+            }
+        });
+    }
 
-* Plan: Add setting for takeoff item not required
-* Plan: Takeoff item must be added prior to allowing other item types to enable
-* Video: Add low latency mode as optional configuration setting (defaults to false)
-* ArduPilot: Fix generated list of available firmwares
+    _videoSourceChanged();
 
-### 4.0.2
+    startVideo();
 
-* Fix Mavlink V2 protocol negotation based on capability bits
-* Fix waiting for AUTOPILOT_VERSION response to get capability bits
-* ArduPilot: Above two fixes make fence/rally support enabling more reliable
+    QQuickWindow *const rootWindow = qgcApp()->mainRootWindow();
+    if (rootWindow) {
+        rootWindow->scheduleRenderJob(new FinishVideoInitialization(), QQuickWindow::BeforeSynchronizingStage);
+    }
 
-### 4.0.1
+    _initialized = true;
+}
 
-* Fix ArduPilot current mission item tracking in Fly view
-* Fix ADSB vehicle display
-* Fix map positioning bug in Plan view
-* Fix Windows 0xcc000007b startup error causes by incorrect VC runtimes being installed.
+void VideoManager::cleanup()
+{
+    for (VideoReceiverData &videoReceiver : _videoReceiverData) {
+        QGCCorePlugin::instance()->releaseVideoSink(videoReceiver.sink);
+        delete videoReceiver.receiver;
+        videoReceiver.receiver = nullptr;
+    }
+}
 
-### 4.0.0
+void VideoManager::startVideo()
+{
+    if (!_videoSettings->streamEnabled()->rawValue().toBool() || !hasVideo()) {
+        qCDebug(VideoManagerLog) << "Stream not enabled/configured";
+        return;
+    }
 
-* Added ROI option during manual flight.
-* Windows: Move builds to 64 bit, Qt 5.12.5
-* Plan: ROI button will switch to Cancel ROI at appropriate times
-* Plan: When ROI is selected the flight path lines which are affected by the ROI will change color
-* ADSB: Added support for connecting to SBS server. Adds support for ADSB data from USB SDR Dongle running 'dump1090 --net' for example.
-* Toolbar: Scrollable left/right on small screens like phones
-* Plan View: New create plan UI for initial plan creation
-* New Corridor editing tools ui. Includes ability to trace polyline by clicking.
-* New Polygon editing tools ui. Includes ability to trace polygon by clicking.
-* More performant flight path display algorithm. Mobile builds no longer show limited path length.
-* ArduPilot: Add Motor Test vehicle setup page
-* Compass Instrument: Add indicators for Home, COG and Next Waypoint headings.
-* Log Replay: Support changing speed of playback
-* Basic object avoidance added to vehicles.
-* Added ability to set a joystick button to be single action or repeated action while the button is held down.
-* Rework joysticks. Fixed several issues and updated setup UI.
-* Adding support for UDP RTP h.265 video streams
-* For text to speech engine on Linux to English (all messages are in English)
-* Automated the ingestion of localization from Crowdin
-* Automated the generation of language resources into the application
-* Added all languages that come from Crowdin, even if empty.
-* Allow dynamic language changes
-* Check and respect camera storage status
-* QGC now requires Qt 5.11 or greater. The idea is to standardize on Qt 5.12 (LTS). Just waiting for a solution for Windows as Qt dropped support for 32-bit.
-* New, QtQuick MAVLink Inspector. The basics are already there but it still needs the ability to filter compID.
-* Fixed application storage location on iOS. It was trying to save things where it could not.
-* Basic support for secondary, thermal imaging with video streaming. If a camera provides both visual spectrum and thermal imaging, you have the option of displaying both at the same time.
-* Better handling of fonts for Korean and Chinese locales. QGC now has builtin fonts for Korean (where some unusable font was being used). I still need to know if Chinese will need its own font as well.
-* ArduPilot: Copter - Add suppor for Simple and Super Simple flight modes
-* ArduPilot: Flight Mode setup - Switch Options were not showing up for all firmware revs
-* ArduCopter: Add PID Tuning page to Tuning Setup
-* ArduPilot: Copter - Advanced Tuning support
-* ArduPilot: Rover - Frame setup support
-* ArduPilot: Copter - Update support to 3.5+
-* ArduPilot: Plane - Update support to 3.8+
-* ArduPilot: Rover - Update support to 3.4+
-* ArduPilot: Rework Airframe setup ui
-* Plan/Pattern: Support named presets to simplify commonly used settings setup. Currently only supported by Survey.
-* ArduCopter: Handle 3.7 parameter name change from CH#_OPT to RC#_OPTION.
-* Improved support for flashing/connecting to ChibiOS bootloaders boards.
-* Making the camera API available to all firmwares, not just PX4.
-* ArduPilot: Support configurable mavlink stream rates. Available from Settings/Mavlink page.
-* Major rewrite and bug fix pass through Structure Scan. Previous version had such bad problems that it can no longer be supported. Plans with Structure Scan will need to be recreated. New QGC will not load old Structure Scan plans.
+    for (const VideoReceiverData &videoReceiver : _videoReceiverData) {
+        _startReceiver(videoReceiver.index);
+    }
+}
 
-## 3.5
+void VideoManager::stopVideo()
+{
+    for (const VideoReceiverData &videoReceiver : _videoReceiverData) {
+        _stopReceiver(videoReceiver.index);
+    }
+}
 
-### 3.5.5
-* Fix mavlink message memset which cause wrong commands to be sent on ArduPilot GotoLocation.
-* Disable Pause when fixed wing is on landing approach.
+void VideoManager::startRecording(const QString &videoFile)
+{
+    const VideoReceiver::FILE_FORMAT fileFormat = static_cast<VideoReceiver::FILE_FORMAT>(_videoSettings->recordingFormat()->rawValue().toInt());
+    if ((fileFormat < VideoReceiver::FILE_FORMAT_MIN) || (fileFormat >= VideoReceiver::FILE_FORMAT_MAX)) {
+        qgcApp()->showAppMessage(tr("Invalid video format defined."));
+        return;
+    }
 
-### 3.5.4
-* Update windows drivers
-* Add support for FMUK66 flashing/connection
-* Guard against null geometry coming from gstreamer which can cause crashes
-* Add .apj file selection support to custom firmware flash
+    _cleanupOldVideos();
 
-### 3.5.3
-* Change minimum RTK Survey-In limit to 0.01 meters
-* Change Windows driver detection logic
-* Fix crash when clicking on GeoFence polygon vertex
-* PX4: Fix missing ```MC_YAW_FF``` parameter in PID Tuning
-* ArduPilot: Fix parameter file save generating bad characters from git hash
+    const QString savePath = SettingsManager::instance()->appSettings()->videoSavePath();
+    if (savePath.isEmpty()) {
+        qgcApp()->showAppMessage(tr("Unabled to record video. Video save path must be specified in Settings."));
+        return;
+    }
 
-### 3.5.2
-* Fix Ubuntu AppImage startup failure
+    const QString videoFileUrl = videoFile.isEmpty() ? QDateTime::currentDateTime().toString("yyyy-MM-dd_hh.mm.ss") : videoFile;
+    const QString ext = kFileExtension[fileFormat - VideoReceiver::FILE_FORMAT_MIN];
 
-### 3.5.1
-* Update Windows usb drivers
-* Add ArduPilot CubeBlack Service Bulletin check
-* Fix visibility of PX4/ArduPilot logo in toolbar
-* Fix tile set count but in OfflineMaps which would cause image and elevation tile set to have incorrect counts and be incorrectly marked as download incomplete.
+    const QString videoFile1 = savePath + "/" + videoFileUrl + "." + ext;
+    const QString videoFile2 = savePath + "/" + videoFileUrl + ".2." + ext;
 
-### 3.5.0
-* Plan GeoFence: Fix loading of fence from intermediate 3.4 code
-* Structure Scan: Fix loading of structure scan height
-* ArduPilot: Fix location of planned home position when not connected to vehicle. Issue #6840.
-* Fix loading of parameters from multiple components. Would report download complete too early, thus missing all default component params.
-* Fix file delete in mobile file dialogs
-* Add support for specifying fixed RTK based station location in Settings/General.
-* Added Airmap integration to QGC
-* Added ESTIMATOR_STATUS values to new estimatorStatus Vehicle FactGroup. These are now available to display in instrument panel.
-* Added Chinese and Turkish localization and partial German localization. 
-* Make Distance to GCS available for display from instrument panel.
-* Make Heading to Home available for display from instrument panel.
-* Edit Position dialog available on polygon vertices.
-* Fixed Wing Landing Pattern: Add stop photo/video support. Defaults to on such that doing an RTL will stop camera.
-* Support loading polygons from SHP files
-* Bumped settings version (now 8). This will cause all settings to be reset to defaults.
-* Orbit visuals support changing rotation direction
-* Added support for the Taisync 2.4GHz ViUlinx digital HD wireless link.
-* Added UDP Port option for NMEA GPS Device.
+    _videoFile = videoFile1;
 
-## 3.4
+    const QStringList videoFiles = {videoFile1, videoFile2};
+    for (VideoReceiverData &videoReceiver : _videoReceiverData) {
+        if (videoReceiver.receiver && videoReceiver.started) {
+            videoReceiver.receiver->startRecording(videoFiles.at(videoReceiver.index), fileFormat);
+        } else {
+            qCDebug(VideoManagerLog) << "Video receiver is not ready.";
+        }
+    }
+}
 
-### 3.4.4
-* Stable desktop versions now inform user at boot if newer version is available.
-* Multi-Vehicle Start Mission and Pause now work correctly. Issue #6864.
+void VideoManager::stopRecording()
+{
+    for (VideoReceiverData &videoReceiver : _videoReceiverData) {
+        videoReceiver.receiver->stopRecording();
+    }
+}
 
-### 3.4.3
-* Fix bug where Resume Mission would not display correctly in some cases. Issue #6835.
-* Fix Planned Home Position altitude when no terrain data available. Issue #6846.
+void VideoManager::grabImage(const QString &imageFile)
+{
+    if (imageFile.isEmpty()) {
+        _imageFile = SettingsManager::instance()->appSettings()->photoSavePath();
+        _imageFile += "/" + QDateTime::currentDateTime().toString("yyyy-MM-dd_hh.mm.ss") + ".jpg";
+    } else {
+        _imageFile = imageFile;
+    }
 
-### 3.4.2
-* Fix bug where new mission items may end up with 0 altitude internally and sent to vehicle while UI shows correct altitude. Issue #6823.
+    emit imageFileChanged();
 
-### 3.4.1
-* Fix crash when Survery with terrain follow is moved quickly
-* Fix terrain follow climb/descent rate fields swapped in ui
+    _videoReceiverData[0].receiver->takeScreenshot(_imageFile);
+}
 
+double VideoManager::aspectRatio() const
+{
+    if (_activeVehicle && _activeVehicle->cameraManager()) {
+        const QGCVideoStreamInfo* const pInfo = _activeVehicle->cameraManager()->currentStreamInstance();
+        if (pInfo) {
+            qCDebug(VideoManagerLog) << "Primary AR:" << pInfo->aspectRatio();
+            return pInfo->aspectRatio();
+        }
+    }
+
+    // FIXME: AV: use _videoReceiver->videoSize() to calculate AR (if AR is not specified in the settings?)
+    return _videoSettings->aspectRatio()->rawValue().toDouble();
+}
+
+double VideoManager::thermalAspectRatio() const
+{
+    if (_activeVehicle && _activeVehicle->cameraManager()) {
+        const QGCVideoStreamInfo* const pInfo = _activeVehicle->cameraManager()->thermalStreamInstance();
+        if (pInfo) {
+            qCDebug(VideoManagerLog) << "Thermal AR:" << pInfo->aspectRatio();
+            return pInfo->aspectRatio();
+        }
+    }
+
+    return 1.0;
+}
+
+double VideoManager::hfov() const
+{
+    if (_activeVehicle && _activeVehicle->cameraManager()) {
+        const QGCVideoStreamInfo* const pInfo = _activeVehicle->cameraManager()->currentStreamInstance();
+        if (pInfo) {
+            return pInfo->hfov();
+        }
+    }
+
+    return 1.0;
+}
+
+double VideoManager::thermalHfov() const
+{
+    if (_activeVehicle && _activeVehicle->cameraManager()) {
+        const QGCVideoStreamInfo* const pInfo = _activeVehicle->cameraManager()->thermalStreamInstance();
+        if (pInfo) {
+            return pInfo->aspectRatio();
+        }
+    }
+
+    return _videoSettings->aspectRatio()->rawValue().toDouble();
+}
+
+bool VideoManager::hasThermal() const
+{
+    if (_activeVehicle && _activeVehicle->cameraManager()) {
+        const QGCVideoStreamInfo* const pInfo = _activeVehicle->cameraManager()->thermalStreamInstance();
+        if (pInfo) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool VideoManager::autoStreamConfigured() const
+{
+    if (_activeVehicle && _activeVehicle->cameraManager()) {
+        const QGCVideoStreamInfo* const pInfo = _activeVehicle->cameraManager()->currentStreamInstance();
+        if (pInfo) {
+            return !pInfo->uri().isEmpty();
+        }
+    }
+
+    return false;
+}
+
+bool VideoManager::hasVideo() const
+{
+    return (autoStreamConfigured() || _videoSettings->streamConfigured());
+}
+
+bool VideoManager::isStreamSource() const
+{
+    static const QStringList videoSourceList = {
+        VideoSettings::videoSourceUDPH264,
+        VideoSettings::videoSourceUDPH265,
+        VideoSettings::videoSourceRTSP,
+        VideoSettings::videoSourceTCP,
+        VideoSettings::videoSourceMPEGTS,
+        VideoSettings::videoSource3DRSolo,
+        VideoSettings::videoSourceParrotDiscovery,
+        VideoSettings::videoSourceYuneecMantisG,
+        VideoSettings::videoSourceHerelinkAirUnit,
+        VideoSettings::videoSourceHerelinkHotspot,
+    };
+    const QString videoSource = _videoSettings->videoSource()->rawValue().toString();
+    return (videoSourceList.contains(videoSource) || autoStreamConfigured());
+}
+
+bool VideoManager::isUvc() const
+{
+    return (uvcEnabled() && (hasVideo() && !_uvcVideoSourceID.isEmpty()));
+}
+
+bool VideoManager::gstreamerEnabled() const
+{
+#ifdef QGC_GST_STREAMING
+    return true;
+#else
+    return false;
+#endif
+}
+
+bool VideoManager::uvcEnabled() const
+{
+#ifndef QGC_DISABLE_UVC
+    return !QMediaDevices::videoInputs().isEmpty();
+#else
+    return false;
+#endif
+}
+
+bool VideoManager::qtmultimediaEnabled() const
+{
+#ifdef QGC_QT_STREAMING
+    return true;
+#else
+    return false;
+#endif
+}
+
+void VideoManager::setfullScreen(bool on)
+{
+    if (on) {
+        if (!_activeVehicle || _activeVehicle->vehicleLinkManager()->communicationLost()) {
+            on = false;
+        }
+    }
+
+    if (on != _fullScreen) {
+        _fullScreen = on;
+        emit fullScreenChanged();
+    }
+}
+
+void VideoManager::_initVideo()
+{
+    QQuickWindow *const root = qgcApp()->mainRootWindow();
+    if (!root) {
+        qCDebug(VideoManagerLog) << "mainRootWindow() failed. No root window";
+        return;
+    }
+
+    for (VideoReceiverData &videoReceiver : _videoReceiverData) {
+        QQuickItem* const widget = root->findChild<QQuickItem*>(videoReceiver.name);
+        if (!widget || !videoReceiver.receiver) {
+            qCDebug(VideoManagerLog) << videoReceiver.name << "receiver disabled";
+            continue;
+        }
+
+        videoReceiver.sink = QGCCorePlugin::instance()->createVideoSink(this, widget);
+        if (!videoReceiver.sink) {
+            qCDebug(VideoManagerLog) << "createVideoSink() failed" << videoReceiver.index;
+            continue;
+        }
+
+        if (videoReceiver.started) {
+            qCDebug(VideoManagerLog) << videoReceiver.name << "receiver start decoding";
+            videoReceiver.receiver->startDecoding(videoReceiver.sink);
+        }
+    }
+}
+
+void VideoManager::_cleanupOldVideos()
+{
+    if (!SettingsManager::instance()->videoSettings()->enableStorageLimit()->rawValue().toBool()) {
+        return;
+    }
+
+    const QString savePath = SettingsManager::instance()->appSettings()->videoSavePath();
+    QDir videoDir = QDir(savePath);
+    videoDir.setFilter(QDir::Files | QDir::Readable | QDir::NoSymLinks | QDir::Writable);
+    videoDir.setSorting(QDir::Time);
+
+    QStringList nameFilters;
+    for (size_t i = 0; i < std::size(kFileExtension); i++) {
+        nameFilters << QStringLiteral("*.") + kFileExtension[i];
+    }
+
+    videoDir.setNameFilters(nameFilters);
+    QFileInfoList vidList = videoDir.entryInfoList();
+    if (vidList.isEmpty()) {
+        return;
+    }
+
+    uint64_t total = 0;
+    for (const QFileInfo &video : vidList) {
+        total += video.size();
+    }
+
+    const uint64_t maxSize = SettingsManager::instance()->videoSettings()->maxVideoSize()->rawValue().toUInt() * qPow(1024, 2);
+    while ((total >= maxSize) && !vidList.isEmpty()) {
+        total -= vidList.last().size();
+        qCDebug(VideoManagerLog) << "Removing old video file:" << vidList.last().filePath();
+        QFile file(vidList.last().filePath());
+        (void) file.remove();
+        vidList.removeLast();
+    }
+}
+
+void VideoManager::_videoSourceChanged()
+{
+    for (const VideoReceiverData &videoReceiver : _videoReceiverData) {
+        (void) _updateSettings(videoReceiver.index);
+    }
+
+    emit hasVideoChanged();
+    emit isStreamSourceChanged();
+    emit isUvcChanged();
+    emit isAutoStreamChanged();
+
+    if (hasVideo()) {
+        _restartAllVideos();
+    } else {
+        stopVideo();
+    }
+
+    qCDebug(VideoManagerLog) << "New Video Source:" << _videoSettings->videoSource()->rawValue().toString();
+}
+
+bool VideoManager::_updateUVC()
+{
+    bool result = false;
+
+#ifndef QGC_DISABLE_UVC
+    const QString oldUvcVideoSrcID = _uvcVideoSourceID;
+    if (!hasVideo() || isStreamSource()) {
+        _uvcVideoSourceID = "";
+    } else {
+        const QString videoSource = _videoSettings->videoSource()->rawValue().toString();
+        const QList<QCameraDevice> videoInputs = QMediaDevices::videoInputs();
+        for (const QCameraDevice &cameraDevice: videoInputs) {
+            if (cameraDevice.description() == videoSource) {
+                _uvcVideoSourceID = cameraDevice.description();
+                qCDebug(VideoManagerLog) << "Found USB source:" << _uvcVideoSourceID << " Name:" << videoSource;
+                break;
+            }
+        }
+    }
+
+    if (oldUvcVideoSrcID != _uvcVideoSourceID) {
+        qCDebug(VideoManagerLog) << "UVC changed from [" << oldUvcVideoSrcID << "] to [" << _uvcVideoSourceID << "]";
+        const QCameraPermission cameraPermission;
+        if (qgcApp()->checkPermission(cameraPermission) == Qt::PermissionStatus::Undetermined) {
+            qgcApp()->requestPermission(cameraPermission, [](const QPermission &permission) {
+                if (permission.status() == Qt::PermissionStatus::Granted) {
+                    qgcApp()->showRebootAppMessage(tr("Restart application for changes to take effect."));
+                }
+            });
+        }
+        result = true;
+        emit uvcVideoSourceIDChanged();
+        emit isUvcChanged();
+    }
+#endif
+
+    return result;
+}
+
+bool VideoManager::_updateAutoStream(unsigned id)
+{
+    if (!_activeVehicle || !_activeVehicle->cameraManager()) {
+        return false;
+    }
+
+    const QGCVideoStreamInfo* const pInfo = _activeVehicle->cameraManager()->currentStreamInstance();
+    if (!pInfo) {
+        return false;
+    }
+
+    bool settingsChanged = false;
+    if (id == 0) {
+        qCDebug(VideoManagerLog) << "Configure primary stream:" << pInfo->uri();
+        switch(pInfo->type()) {
+        case VIDEO_STREAM_TYPE_RTSP:
+            settingsChanged = _updateVideoUri(id, pInfo->uri());
+            if (settingsChanged) {
+                SettingsManager::instance()->videoSettings()->videoSource()->setRawValue(VideoSettings::videoSourceRTSP);
+            }
+            break;
+        case VIDEO_STREAM_TYPE_TCP_MPEG:
+            settingsChanged = _updateVideoUri(id, pInfo->uri());
+            if (settingsChanged) {
+                SettingsManager::instance()->videoSettings()->videoSource()->setRawValue(VideoSettings::videoSourceTCP);
+            }
+            break;
+        case VIDEO_STREAM_TYPE_RTPUDP: {
+            const QString url = pInfo->uri().contains("udp://") ? pInfo->uri() : QStringLiteral("udp://0.0.0.0:%1").arg(pInfo->uri());
+            settingsChanged = _updateVideoUri(id, url);
+            if (settingsChanged) {
+                SettingsManager::instance()->videoSettings()->videoSource()->setRawValue(VideoSettings::videoSourceUDPH264);
+            }
+            break;
+        }
+        case VIDEO_STREAM_TYPE_MPEG_TS:
+            settingsChanged = _updateVideoUri(id, QStringLiteral("mpegts://0.0.0.0:%1").arg(pInfo->uri()));
+            if (settingsChanged) {
+                SettingsManager::instance()->videoSettings()->videoSource()->setRawValue(VideoSettings::videoSourceMPEGTS);
+            }
+            break;
+        default:
+            settingsChanged = _updateVideoUri(id, pInfo->uri());
+            break;
+        }
+    } else if (id == 1) {
+        const QGCVideoStreamInfo* const pTinfo = _activeVehicle->cameraManager()->thermalStreamInstance();
+        if (pTinfo) {
+            qCDebug(VideoManagerLog) << "Configure secondary stream:" << pTinfo->uri();
+            switch(pTinfo->type()) {
+            case VIDEO_STREAM_TYPE_RTSP:
+            case VIDEO_STREAM_TYPE_TCP_MPEG:
+                settingsChanged = _updateVideoUri(id, pTinfo->uri());
+                break;
+            case VIDEO_STREAM_TYPE_RTPUDP:
+                settingsChanged = _updateVideoUri(id, QStringLiteral("udp://0.0.0.0:%1").arg(pTinfo->uri()));
+                break;
+            case VIDEO_STREAM_TYPE_MPEG_TS:
+                settingsChanged = _updateVideoUri(id, QStringLiteral("mpegts://0.0.0.0:%1").arg(pTinfo->uri()));
+                break;
+            default:
+                settingsChanged = _updateVideoUri(id, pTinfo->uri());
+                break;
+            }
+        }
+    }
+
+    return settingsChanged;
+}
+
+bool VideoManager::_updateSettings(unsigned id)
+{
+    if (!_videoSettings) {
+        return false;
+    }
+
+    if (id > (_videoReceiverData.size() - 1)) {
+        qCDebug(VideoManagerLog) << "Unsupported receiver id" << id;
+        return false;
+    }
+
+    bool settingsChanged = false;
+
+    const bool lowLatencyStreaming = _videoSettings->lowLatencyMode()->rawValue().toBool();
+    if (lowLatencyStreaming != _videoReceiverData[id].lowLatencyStreaming) {
+        _videoReceiverData[id].lowLatencyStreaming = lowLatencyStreaming;
+        settingsChanged = true;
+    }
+
+    settingsChanged |= _updateUVC();
+
+    if (_activeVehicle && _activeVehicle->cameraManager()) {
+        const QGCVideoStreamInfo* const pInfo = _activeVehicle->cameraManager()->currentStreamInstance();
+        if (pInfo) {
+            settingsChanged |= _updateAutoStream(id);
+            return settingsChanged;
+        }
+    }
+
+    if (id == 0) {
+        const QString source = _videoSettings->videoSource()->rawValue().toString();
+        if (source == VideoSettings::videoSourceUDPH264) {
+            settingsChanged |= _updateVideoUri(id, QStringLiteral("udp://0.0.0.0:%1").arg(_videoSettings->udpPort()->rawValue().toInt()));
+        } else if (source == VideoSettings::videoSourceUDPH265) {
+            settingsChanged |= _updateVideoUri(id, QStringLiteral("udp265://0.0.0.0:%1").arg(_videoSettings->udpPort()->rawValue().toInt()));
+        } else if (source == VideoSettings::videoSourceMPEGTS) {
+            settingsChanged |= _updateVideoUri(id, QStringLiteral("mpegts://0.0.0.0:%1").arg(_videoSettings->udpPort()->rawValue().toInt()));
+        } else if (source == VideoSettings::videoSourceRTSP) {
+            settingsChanged |= _updateVideoUri(id, _videoSettings->rtspUrl()->rawValue().toString());
+        } else if (source == VideoSettings::videoSourceTCP) {
+            settingsChanged |= _updateVideoUri(id, QStringLiteral("tcp://%1").arg(_videoSettings->tcpUrl()->rawValue().toString()));
+        } else if (source == VideoSettings::videoSource3DRSolo) {
+            settingsChanged |= _updateVideoUri(id, QStringLiteral("udp://0.0.0.0:5600"));
+        } else if (source == VideoSettings::videoSourceParrotDiscovery) {
+            settingsChanged |= _updateVideoUri(id, QStringLiteral("udp://0.0.0.0:8888"));
+        } else if (source == VideoSettings::videoSourceYuneecMantisG) {
+            settingsChanged |= _updateVideoUri(id, QStringLiteral("rtsp://192.168.42.1:554/live"));
+        } else if (source == VideoSettings::videoSourceHerelinkAirUnit) {
+            settingsChanged |= _updateVideoUri(id, QStringLiteral("rtsp://192.168.0.10:8554/H264Video"));
+        } else if (source == VideoSettings::videoSourceHerelinkHotspot) {
+            settingsChanged |= _updateVideoUri(id, QStringLiteral("rtsp://192.168.43.1:8554/fpv_stream"));
+        } else if (source == VideoSettings::videoDisabled || source == VideoSettings::videoSourceNoVideo) {
+            settingsChanged |= _updateVideoUri(id, "");
+        } else {
+            settingsChanged |= _updateVideoUri(id, "");
+            if (!isUvc()) {
+                qCCritical(VideoManagerLog) << "Video source URI \"" << source << "\" is not supported. Please add support!";
+            }
+        }
+    }
+    /*
+    if (id == 1) {
+        // İkinci bir RTSP URL'si için VideoSettings'e rtspUrl2() ekleyerek kullanın
+        // Örnek olarak sabit kodlanmış bir URL kullanıyorum, siz VideoSettings'ten alabilirsiniz
+        const QString source2 = _videoSettings->videoSource()->rawValue().toString();
+        if (source2 == VideoSettings::videoSourceUDPH264) {
+            settingsChanged |= _updateVideoUri(id, QStringLiteral("udp://0.0.0.0:%1").arg(_videoSettings->udpPort()->rawValue().toInt()));
+        } else if (source2 == VideoSettings::videoSourceUDPH265) {
+            settingsChanged |= _updateVideoUri(id, QStringLiteral("udp265://0.0.0.0:%1").arg(_videoSettings->udpPort()->rawValue().toInt()));
+        } else if (source2 == VideoSettings::videoSourceMPEGTS) {
+            settingsChanged |= _updateVideoUri(id, QStringLiteral("mpegts://0.0.0.0:%1").arg(_videoSettings->udpPort()->rawValue().toInt()));
+        } else if (source2 == VideoSettings::videoSourceRTSP) {
+            settingsChanged |= _updateVideoUri(id, _videoSettings->rtspUrl()->rawValue().toString());
+        } else if (source2 == VideoSettings::videoSourceTCP) {
+            settingsChanged |= _updateVideoUri(id, QStringLiteral("tcp://%1").arg(_videoSettings->tcpUrl()->rawValue().toString()));
+        } else if (source2 == VideoSettings::videoSource3DRSolo) {
+            settingsChanged |= _updateVideoUri(id, QStringLiteral("udp://0.0.0.0:5600"));
+        } else if (source2 == VideoSettings::videoSourceParrotDiscovery) {
+            settingsChanged |= _updateVideoUri(id, QStringLiteral("udp://0.0.0.0:8888"));
+        } else if (source2 == VideoSettings::videoSourceYuneecMantisG) {
+            settingsChanged |= _updateVideoUri(id, QStringLiteral("rtsp://192.168.42.1:554/live"));
+        } else if (source2 == VideoSettings::videoSourceHerelinkAirUnit) {
+            settingsChanged |= _updateVideoUri(id, QStringLiteral("rtsp://192.168.0.10:8554/H264Video"));
+        } else if (source2 == VideoSettings::videoSourceHerelinkHotspot) {
+            settingsChanged |= _updateVideoUri(id, QStringLiteral("rtsp://192.168.43.1:8554/fpv_stream"));
+        } else if (source2 == VideoSettings::videoDisabled || source2 == VideoSettings::videoSourceNoVideo) {
+            settingsChanged |= _updateVideoUri(id, "");
+        } else {
+            settingsChanged |= _updateVideoUri(id, "");
+            if (!isUvc()) {
+                qCCritical(VideoManagerLog) << "Video source2 URI \"" << source2 << "\" is not supported. Please add support!";
+            }
+        }
+    }
+*/
+    return settingsChanged;
+}
+
+bool VideoManager::_updateVideoUri(unsigned id, const QString &uri)
+{
+    if (id > (_videoReceiverData.size() - 1)) {
+        qCDebug(VideoManagerLog) << "Unsupported receiver id" << id;
+        return false;
+    }
+
+    if (uri == _videoReceiverData[id].uri) {
+        return false;
+    }
+
+    qCDebug(VideoManagerLog) << "New Video URI" << uri;
+
+    _videoReceiverData[id].uri = uri;
+
+    return true;
+}
+
+void VideoManager::_restartVideo(unsigned id)
+{
+    if (id > (_videoReceiverData.size() - 1)) {
+        qCDebug(VideoManagerLog) << "Unsupported receiver id" << id;
+        return;
+    }
+
+    qCDebug(VideoManagerLog) << "Restart video streaming" << id;
+
+    if (_videoReceiverData[id].started) {
+        _stopReceiver(id);
+    }
+
+    _startReceiver(id);
+}
+
+void VideoManager::_restartAllVideos()
+{
+    for (const VideoReceiverData &videoReceiver : _videoReceiverData) {
+        _restartVideo(videoReceiver.index);
+    }
+}
+
+void VideoManager::_startReceiver(unsigned id)
+{
+    if (id > (_videoReceiverData.size() - 1)) {
+        qCDebug(VideoManagerLog) << "Unsupported receiver id" << id;
+        return;
+    }
+
+    if (!_videoReceiverData[id].receiver) {
+        qCDebug(VideoManagerLog) << "VideoReceiver is NULL" << id;
+        return;
+    }
+
+    if (_videoReceiverData[id].uri.isEmpty()) {
+        qCDebug(VideoManagerLog) << "VideoUri is NULL" << id;
+        return;
+    }
+
+    const QString source = _videoSettings->videoSource()->rawValue().toString();
+    const unsigned rtsptimeout = _videoSettings->rtspTimeout()->rawValue().toUInt();
+    /* The gstreamer rtsp source will switch to tcp if udp is not available after 5 seconds.
+       So we should allow for some negotiation time for rtsp */
+    const unsigned timeout = (source == VideoSettings::videoSourceRTSP ? rtsptimeout : 3);
+
+    _videoReceiverData[id].receiver->start(_videoReceiverData[id].uri, timeout, _videoReceiverData[id].lowLatencyStreaming ? -1 : 0);
+}
+
+void VideoManager::_stopReceiver(unsigned id)
+{
+    if (id > (_videoReceiverData.size() - 1)) {
+        qCDebug(VideoManagerLog) << "Unsupported receiver id" << id;
+        return;
+    }
+
+    if (_videoReceiverData[id].receiver == nullptr) {
+        qCDebug(VideoManagerLog) << "VideoReceiver is NULL" << id;
+        return;
+    }
+
+    _videoReceiverData[id].receiver->stop();
+}
+
+void VideoManager::_setActiveVehicle(Vehicle *vehicle)
+{
+    if (_activeVehicle) {
+        (void) disconnect(_activeVehicle->vehicleLinkManager(), &VehicleLinkManager::communicationLostChanged, this, &VideoManager::_communicationLostChanged);
+        if (_activeVehicle->cameraManager()) {
+            MavlinkCameraControl *const pCamera = _activeVehicle->cameraManager()->currentCameraInstance();
+            if (pCamera) {
+                pCamera->stopStream();
+            }
+            (void) disconnect(_activeVehicle->cameraManager(), &QGCCameraManager::streamChanged, this, &VideoManager::_restartAllVideos);
+        }
+    }
+
+    _activeVehicle = vehicle;
+    if (_activeVehicle) {
+        (void) connect(_activeVehicle->vehicleLinkManager(), &VehicleLinkManager::communicationLostChanged, this, &VideoManager::_communicationLostChanged);
+        if (_activeVehicle->cameraManager()) {
+            (void) connect(_activeVehicle->cameraManager(), &QGCCameraManager::streamChanged, this, &VideoManager::_restartAllVideos);
+            MavlinkCameraControl *const pCamera = _activeVehicle->cameraManager()->currentCameraInstance();
+            if (pCamera) {
+                pCamera->resumeStream();
+            }
+        }
+    } else {
+        setfullScreen(false);
+    }
+
+    emit autoStreamConfiguredChanged();
+    _restartAllVideos();
+}
+
+void VideoManager::_communicationLostChanged(bool connectionLost)
+{
+    if (connectionLost) {
+        setfullScreen(false);
+    }
+}
+
+/*===========================================================================*/
+
+FinishVideoInitialization::FinishVideoInitialization()
+    : QRunnable()
+{
+    // qCDebug(VideoManagerLog) << Q_FUNC_INFO << this;
+}
+
+FinishVideoInitialization::~FinishVideoInitialization()
+{
+    // qCDebug(VideoManagerLog) << Q_FUNC_INFO << this;
+}
+
+void FinishVideoInitialization::run()
+{
+    VideoManager::instance()->_initVideo();
+}
+
+////////////////////////////////////////////////// EDİTİNG ////////////////////////////////////////
+/****************************************************************************
+ *
+ * (c) 2009-2024 QGROUNDCONTROL PROJECT <http://www.qgroundcontrol.org>
+ *
+ * QGroundControl is licensed according to the terms in the file
+ * COPYING.md in the root of the source code directory.
+ *
+ ****************************************************************************/
+
+#include "VideoManager.h"
+#include "MultiVehicleManager.h"
+#include "QGCApplication.h"
+#include "QGCCameraManager.h"
+#include "QGCCorePlugin.h"
+#include "QGCLoggingCategory.h"
+#include "SettingsManager.h"
+#include "AppSettings.h"
+#include "SubtitleWriter.h"
+#include "Vehicle.h"
+#include "VideoReceiver.h"
+#include "VideoSettings.h"
+#ifdef QGC_GST_STREAMING
+#include "GStreamer.h"
+#else
+#include "GLVideoItemStub.h"
+#endif
+#ifdef QGC_QT_STREAMING
+#include "QtMultimediaReceiver.h"
+// #include "UVCReceiver.h"
+#endif
+
+#ifndef QGC_DISABLE_UVC
+#include <QtCore/QPermissions>
+#include <QtMultimedia/QCameraDevice>
+#include <QtMultimedia/QMediaDevices>
+#include <QtQuick/QQuickWindow>
+#endif
+
+#include <QtCore/qapplicationstatic.h>
+#include <QtCore/QDir>
+#include <QtQml/QQmlEngine>
+#include <QtQuick/QQuickItem>
+
+QGC_LOGGING_CATEGORY(VideoManagerLog, "qgc.videomanager.videomanager")
+
+static constexpr const char *kFileExtension[VideoReceiver::FILE_FORMAT_MAX - VideoReceiver::FILE_FORMAT_MIN] = {
+    "mkv",
+    "mov",
+    "mp4"
+};
+
+Q_APPLICATION_STATIC(VideoManager, _videoManagerInstance);
+
+VideoManager::VideoManager(QObject *parent)
+    : QObject(parent)
+    , _subtitleWriter(new SubtitleWriter(this))
+    , _videoSettings(SettingsManager::instance()->videoSettings())
+{
+    // qCDebug(VideoManagerLog) << Q_FUNC_INFO << this;
+
+#ifdef QGC_GST_STREAMING
+    GStreamer::initialize();
+#endif
+}
+
+VideoManager::~VideoManager()
+{
+    // qCDebug(VideoManagerLog) << Q_FUNC_INFO << this;
+}
+
+VideoManager *VideoManager::instance()
+{
+    return _videoManagerInstance();
+}
+
+void VideoManager::registerQmlTypes()
+{
+    (void) qmlRegisterUncreatableType<VideoManager>("QGroundControl.VideoManager", 1, 0, "VideoManager", "Reference only");
+    (void) qmlRegisterUncreatableType<VideoReceiver>("QGroundControl", 1, 0, "VideoReceiver","Reference only");
+    #ifndef QGC_GST_STREAMING
+        (void) qmlRegisterType<GLVideoItemStub>("org.freedesktop.gstreamer.Qt6GLVideoItem", 1, 0, "GstGLQt6VideoItem");
+    #endif
+}
+
+void VideoManager::init()
+{
+    if (_initialized) {
+        return;
+    }
+
+    // TODO: Those connections should be Per Video, not per VideoManager.
+    (void) connect(_videoSettings->videoSource(), &Fact::rawValueChanged, this, &VideoManager::_videoSourceChanged);
+    (void) connect(_videoSettings->udpPort(), &Fact::rawValueChanged, this, &VideoManager::_videoSourceChanged);
+    (void) connect(_videoSettings->rtspUrl(), &Fact::rawValueChanged, this, &VideoManager::_videoSourceChanged);
+    (void) connect(_videoSettings->rtspUrl1(), &Fact::rawValueChanged, this, &VideoManager::_videoSourceChanged);
+    (void) connect(_videoSettings->rtspUrl2(), &Fact::rawValueChanged, this, &VideoManager::_videoSourceChanged);
+    (void) connect(_videoSettings->tcpUrl(), &Fact::rawValueChanged, this, &VideoManager::_videoSourceChanged);
+    (void) connect(_videoSettings->aspectRatio(), &Fact::rawValueChanged, this, &VideoManager::aspectRatioChanged);
+    (void) connect(_videoSettings->lowLatencyMode(), &Fact::rawValueChanged, this, &VideoManager::_lowLatencyModeChanged);
+    (void) connect(MultiVehicleManager::instance(), &MultiVehicleManager::activeVehicleChanged, this, &VideoManager::_setActiveVehicle);
+
+    int index = 0;
+    const QStringList widgetTypes = {"videoContent", "thermalVideo", "thirdVideo"};
+    Q_ASSERT(widgetTypes.length() <= _videoReceiverData.length());
+    for (VideoReceiverData &videoReceiver : _videoReceiverData) {
+        videoReceiver.index = index++;
+        videoReceiver.receiver = QGCCorePlugin::instance()->createVideoReceiver(this);
+        if (!videoReceiver.receiver) {
+            continue;
+        }
+        videoReceiver.name = widgetTypes[videoReceiver.index];
+
+        (void) connect(videoReceiver.receiver, &VideoReceiver::onStartComplete, this, [this, &videoReceiver](VideoReceiver::STATUS status) {
+            qCDebug(VideoManagerLog) << "Video" << videoReceiver.index << "Start complete, status:" << status;
+            switch (status) {
+            case VideoReceiver::STATUS_OK:
+                videoReceiver.started = true;
+                if (videoReceiver.sink) {
+                    videoReceiver.receiver->startDecoding(videoReceiver.sink);
+                }
+                break;
+            case VideoReceiver::STATUS_INVALID_URL:
+            case VideoReceiver::STATUS_INVALID_STATE:
+                break;
+            default:
+                _restartVideo(videoReceiver.index);
+                break;
+            }
+        });
+
+        (void) connect(videoReceiver.receiver, &VideoReceiver::onStopComplete, this, [this, &videoReceiver](VideoReceiver::STATUS status) {
+            qCDebug(VideoManagerLog) << "Video" << videoReceiver.index << "Stop complete, status:" << status;
+            videoReceiver.started = false;
+            if (status == VideoReceiver::STATUS_INVALID_URL) {
+                qCDebug(VideoManagerLog) << "Invalid video URL. Not restarting";
+            } else {
+                _startReceiver(videoReceiver.index);
+            }
+        });
+
+        (void) connect(videoReceiver.receiver, &VideoReceiver::streamingChanged, this, [this, &videoReceiver](bool active) {
+            qCDebug(VideoManagerLog) << "Video" << videoReceiver.index << "streaming changed, active:" << (active ? "yes" : "no");
+            if (videoReceiver.index == 0) {
+                _streaming = active;
+                emit streamingChanged();
+            }
+        });
+
+        (void) connect(videoReceiver.receiver, &VideoReceiver::decodingChanged, this, [this, &videoReceiver](bool active) {
+            qCDebug(VideoManagerLog) << "Video" << videoReceiver.index << "decoding changed, active:" << (active ? "yes" : "no");
+            if (videoReceiver.index == 0) {
+                _decoding = active;
+                emit decodingChanged();
+            }
+        });
+
+        (void) connect(videoReceiver.receiver, &VideoReceiver::recordingChanged, this, [this, &videoReceiver](bool active) {
+            qCDebug(VideoManagerLog) << "Video" << videoReceiver.index << "recording changed, active:" << (active ? "yes" : "no");
+            if (videoReceiver.index == 0) {
+                _recording = active;
+                if (!active) {
+                    _subtitleWriter->stopCapturingTelemetry();
+                }
+                emit recordingChanged();
+            }
+        });
+
+        (void) connect(videoReceiver.receiver, &VideoReceiver::recordingStarted, this, [this, &videoReceiver]() {
+            qCDebug(VideoManagerLog) << "Video" << videoReceiver.index << "recording started";
+            if (videoReceiver.index == 0) {
+                _subtitleWriter->startCapturingTelemetry(_videoFile);
+            }
+        });
+
+        (void) connect(videoReceiver.receiver, &VideoReceiver::videoSizeChanged, this, [this, &videoReceiver](QSize size) {
+            qCDebug(VideoManagerLog) << "Video" << videoReceiver.index << "resized. New resolution:" << size.width() << "x" << size.height();
+            if (videoReceiver.index == 0) {
+                _videoSize = (static_cast<quint32>(size.width()) << 16) | static_cast<quint32>(size.height());
+                emit videoSizeChanged();
+            }
+        });
+
+        (void) connect(videoReceiver.receiver, &VideoReceiver::onTakeScreenshotComplete, this, [&videoReceiver](VideoReceiver::STATUS status) {
+            if (status == VideoReceiver::STATUS_OK) {
+                qCDebug(VideoManagerLog) << "Video" << videoReceiver.index << "screenshot taken";
+            } else {
+                qCWarning(VideoManagerLog) << "Video" << videoReceiver.index << "screenshot failed";
+            }
+        });
+    }
+
+    _videoSourceChanged();
+
+    startVideo();
+
+    QQuickWindow *const rootWindow = qgcApp()->mainRootWindow();
+    if (rootWindow) {
+        rootWindow->scheduleRenderJob(new FinishVideoInitialization(), QQuickWindow::BeforeSynchronizingStage);
+    }
+
+    _initialized = true;
+}
+
+void VideoManager::cleanup()
+{
+    for (VideoReceiverData &videoReceiver : _videoReceiverData) {
+        QGCCorePlugin::instance()->releaseVideoSink(videoReceiver.sink);
+        delete videoReceiver.receiver;
+        videoReceiver.receiver = nullptr;
+    }
+}
+
+void VideoManager::startVideo()
+{
+    if (!_videoSettings->streamEnabled()->rawValue().toBool() || !hasVideo()) {
+        qCDebug(VideoManagerLog) << "Stream not enabled/configured";
+        return;
+    }
+
+    for (const VideoReceiverData &videoReceiver : _videoReceiverData) {
+        _startReceiver(videoReceiver.index);
+    }
+}
+
+void VideoManager::stopVideo()
+{
+    for (const VideoReceiverData &videoReceiver : _videoReceiverData) {
+        _stopReceiver(videoReceiver.index);
+    }
+}
+
+void VideoManager::startRecording(const QString &videoFile)
+{
+    const VideoReceiver::FILE_FORMAT fileFormat = static_cast<VideoReceiver::FILE_FORMAT>(_videoSettings->recordingFormat()->rawValue().toInt());
+    if ((fileFormat < VideoReceiver::FILE_FORMAT_MIN) || (fileFormat >= VideoReceiver::FILE_FORMAT_MAX)) {
+        qgcApp()->showAppMessage(tr("Invalid video format defined."));
+        return;
+    }
+
+    _cleanupOldVideos();
+
+    const QString savePath = SettingsManager::instance()->appSettings()->videoSavePath();
+    if (savePath.isEmpty()) {
+        qgcApp()->showAppMessage(tr("Unabled to record video. Video save path must be specified in Settings."));
+        return;
+    }
+
+    const QString videoFileUrl = videoFile.isEmpty() ? QDateTime::currentDateTime().toString("yyyy-MM-dd_hh.mm.ss") : videoFile;
+    const QString ext = kFileExtension[fileFormat - VideoReceiver::FILE_FORMAT_MIN];
+
+    const QString videoFile1 = savePath + "/" + videoFileUrl + "." + ext;
+    const QString videoFile2 = savePath + "/" + videoFileUrl + ".2." + ext;
+    const QString videoFile3 = savePath + "/" + videoFileUrl + ".3." + ext;
+
+    _videoFile = videoFile1;
+
+    const QStringList videoFiles = {videoFile1, videoFile2, videoFile3};
+    for (VideoReceiverData &videoReceiver : _videoReceiverData) {
+        if (videoReceiver.receiver && videoReceiver.started) {
+            videoReceiver.receiver->startRecording(videoFiles.at(videoReceiver.index), fileFormat);
+        } else {
+            qCDebug(VideoManagerLog) << "Video receiver is not ready.";
+        }
+    }
+}
+
+void VideoManager::stopRecording()
+{
+    for (VideoReceiverData &videoReceiver : _videoReceiverData) {
+        videoReceiver.receiver->stopRecording();
+    }
+}
+
+void VideoManager::grabImage(const QString &imageFile)
+{
+    if (imageFile.isEmpty()) {
+        _imageFile = SettingsManager::instance()->appSettings()->photoSavePath();
+        _imageFile += "/" + QDateTime::currentDateTime().toString("yyyy-MM-dd_hh.mm.ss") + ".jpg";
+    } else {
+        _imageFile = imageFile;
+    }
+
+    emit imageFileChanged();
+
+    _videoReceiverData[0].receiver->takeScreenshot(_imageFile);
+}
+
+double VideoManager::aspectRatio() const
+{
+    if (_activeVehicle && _activeVehicle->cameraManager()) {
+        const QGCVideoStreamInfo* const pInfo = _activeVehicle->cameraManager()->currentStreamInstance();
+        if (pInfo) {
+            qCDebug(VideoManagerLog) << "Primary AR:" << pInfo->aspectRatio();
+            return pInfo->aspectRatio();
+        }
+    }
+
+    // FIXME: AV: use _videoReceiver->videoSize() to calculate AR (if AR is not specified in the settings?)
+    return _videoSettings->aspectRatio()->rawValue().toDouble();
+}
+
+double VideoManager::thermalAspectRatio() const
+{
+    if (_activeVehicle && _activeVehicle->cameraManager()) {
+        const QGCVideoStreamInfo* const pInfo = _activeVehicle->cameraManager()->thermalStreamInstance();
+        if (pInfo) {
+            qCDebug(VideoManagerLog) << "Thermal AR:" << pInfo->aspectRatio();
+            return pInfo->aspectRatio();
+        }
+    }
+
+    return 1.0;
+}
+
+double VideoManager::thirdAspectRatio() const
+{
+    // For the third video source, you may need to add a similar method in your cameraManager
+    // For now, returning a default aspect ratio
+    return 1.0;
+}
+
+double VideoManager::hfov() const
+{
+    if (_activeVehicle && _activeVehicle->cameraManager()) {
+        const QGCVideoStreamInfo* const pInfo = _activeVehicle->cameraManager()->currentStreamInstance();
+        if (pInfo) {
+            return pInfo->hfov();
+        }
+    }
+
+    return 1.0;
+}
+
+double VideoManager::thermalHfov() const
+{
+    if (_activeVehicle && _activeVehicle->cameraManager()) {
+        const QGCVideoStreamInfo* const pInfo = _activeVehicle->cameraManager()->thermalStreamInstance();
+        if (pInfo) {
+            return pInfo->aspectRatio();
+        }
+    }
+
+    return _videoSettings->aspectRatio()->rawValue().toDouble();
+}
+
+double VideoManager::thirdHfov() const
+{
+    // For the third video source, you may need to add a similar method in your cameraManager
+    // For now, returning a default value
+    return 1.0;
+}
+
+bool VideoManager::hasThermal() const
+{
+    if (_activeVehicle && _activeVehicle->cameraManager()) {
+        const QGCVideoStreamInfo* const pInfo = _activeVehicle->cameraManager()->thermalStreamInstance();
+        if (pInfo) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool VideoManager::hasThirdVideo() const
+{
+    // Check if the third video URL is configured
+    return !_videoSettings->rtspUrl2()->rawValue().toString().isEmpty();
+}
+
+bool VideoManager::autoStreamConfigured() const
+{
+    if (_activeVehicle && _activeVehicle->cameraManager()) {
+        const QGCVideoStreamInfo* const pInfo = _activeVehicle->cameraManager()->currentStreamInstance();
+        if (pInfo) {
+            return !pInfo->uri().isEmpty();
+        }
+    }
+
+    return false;
+}
+
+bool VideoManager::hasVideo() const
+{
+    return (autoStreamConfigured() || _videoSettings->streamConfigured());
+}
+
+bool VideoManager::isStreamSource() const
+{
+    static const QStringList videoSourceList = {
+        VideoSettings::videoSourceUDPH264,
+        VideoSettings::videoSourceUDPH265,
+        VideoSettings::videoSourceRTSP,
+        VideoSettings::videoSourceTCP,
+        VideoSettings::videoSourceMPEGTS,
+        VideoSettings::videoSource3DRSolo,
+        VideoSettings::videoSourceParrotDiscovery,
+        VideoSettings::videoSourceYuneecMantisG,
+        VideoSettings::videoSourceHerelinkAirUnit,
+        VideoSettings::videoSourceHerelinkHotspot,
+    };
+    const QString videoSource = _videoSettings->videoSource()->rawValue().toString();
+    return (videoSourceList.contains(videoSource) || autoStreamConfigured());
+}
+
+bool VideoManager::isUvc() const
+{
+    return (uvcEnabled() && (hasVideo() && !_uvcVideoSourceID.isEmpty()));
+}
+
+bool VideoManager::gstreamerEnabled() const
+{
+#ifdef QGC_GST_STREAMING
+    return true;
+#else
+    return false;
+#endif
+}
+
+bool VideoManager::uvcEnabled() const
+{
+#ifndef QGC_DISABLE_UVC
+    return !QMediaDevices::videoInputs().isEmpty();
+#else
+    return false;
+#endif
+}
+
+bool VideoManager::qtmultimediaEnabled() const
+{
+#ifdef QGC_QT_STREAMING
+    return true;
+#else
+    return false;
+#endif
+}
+
+void VideoManager::setfullScreen(bool on)
+{
+    if (on) {
+        if (!_activeVehicle || _activeVehicle->vehicleLinkManager()->communicationLost()) {
+            on = false;
+        }
+    }
+
+    if (on != _fullScreen) {
+        _fullScreen = on;
+        emit fullScreenChanged();
+    }
+}
+
+void VideoManager::_initVideo()
+{
+    QQuickWindow *const root = qgcApp()->mainRootWindow();
+    if (!root) {
+        qCDebug(VideoManagerLog) << "mainRootWindow() failed. No root window";
+        return;
+    }
+
+    for (VideoReceiverData &videoReceiver : _videoReceiverData) {
+        QQuickItem* const widget = root->findChild<QQuickItem*>(videoReceiver.name);
+        if (!widget || !videoReceiver.receiver) {
+            qCDebug(VideoManagerLog) << videoReceiver.name << "receiver disabled";
+            continue;
+        }
+
+        videoReceiver.sink = QGCCorePlugin::instance()->createVideoSink(this, widget);
+        if (!videoReceiver.sink) {
+            qCDebug(VideoManagerLog) << "createVideoSink() failed" << videoReceiver.index;
+            continue;
+        }
+
+        if (videoReceiver.started) {
+            qCDebug(VideoManagerLog) << videoReceiver.name << "receiver start decoding";
+            videoReceiver.receiver->startDecoding(videoReceiver.sink);
+        }
+    }
+}
+
+void VideoManager::_cleanupOldVideos()
+{
+    if (!SettingsManager::instance()->videoSettings()->enableStorageLimit()->rawValue().toBool()) {
+        return;
+    }
+
+    const QString savePath = SettingsManager::instance()->appSettings()->videoSavePath();
+    QDir videoDir = QDir(savePath);
+    videoDir.setFilter(QDir::Files | QDir::Readable | QDir::NoSymLinks | QDir::Writable);
+    videoDir.setSorting(QDir::Time);
+
+    QStringList nameFilters;
+    for (size_t i = 0; i < std::size(kFileExtension); i++) {
+        nameFilters << QStringLiteral("*.") + kFileExtension[i];
+    }
+
+    videoDir.setNameFilters(nameFilters);
+    QFileInfoList vidList = videoDir.entryInfoList();
+    if (vidList.isEmpty()) {
+        return;
+    }
+
+    uint64_t total = 0;
+    for (const QFileInfo &video : vidList) {
+        total += video.size();
+    }
+
+    const uint64_t maxSize = SettingsManager::instance()->videoSettings()->maxVideoSize()->rawValue().toUInt() * qPow(1024, 2);
+    while ((total >= maxSize) && !vidList.isEmpty()) {
+        total -= vidList.last().size();
+        qCDebug(VideoManagerLog) << "Removing old video file:" << vidList.last().filePath();
+        QFile file(vidList.last().filePath());
+        (void) file.remove();
+        vidList.removeLast();
+    }
+}
+
+void VideoManager::_videoSourceChanged()
+{
+    for (const VideoReceiverData &videoReceiver : _videoReceiverData) {
+        (void) _updateSettings(videoReceiver.index);
+    }
+
+    emit hasVideoChanged();
+    emit isStreamSourceChanged();
+    emit isUvcChanged();
+    emit isAutoStreamChanged();
+
+    if (hasVideo()) {
+        _restartAllVideos();
+    } else {
+        stopVideo();
+    }
+
+    qCDebug(VideoManagerLog) << "New Video Source:" << _videoSettings->videoSource()->rawValue().toString();
+}
+
+bool VideoManager::_updateUVC()
+{
+    bool result = false;
+
+#ifndef QGC_DISABLE_UVC
+    const QString oldUvcVideoSrcID = _uvcVideoSourceID;
+    if (!hasVideo() || isStreamSource()) {
+        _uvcVideoSourceID = "";
+    } else {
+        const QString videoSource = _videoSettings->videoSource()->rawValue().toString();
+        const QList<QCameraDevice> videoInputs = QMediaDevices::videoInputs();
+        for (const QCameraDevice &cameraDevice: videoInputs) {
+            if (cameraDevice.description() == videoSource) {
+                _uvcVideoSourceID = cameraDevice.description();
+                qCDebug(VideoManagerLog) << "Found USB source:" << _uvcVideoSourceID << " Name:" << videoSource;
+                break;
+            }
+        }
+    }
+
+    if (oldUvcVideoSrcID != _uvcVideoSourceID) {
+        qCDebug(VideoManagerLog) << "UVC changed from [" << oldUvcVideoSrcID << "] to [" << _uvcVideoSourceID << "]";
+        const QCameraPermission cameraPermission;
+        if (qgcApp()->checkPermission(cameraPermission) == Qt::PermissionStatus::Undetermined) {
+            qgcApp()->requestPermission(cameraPermission, [](const QPermission &permission) {
+                if (permission.status() == Qt::PermissionStatus::Granted) {
+                    qgcApp()->showRebootAppMessage(tr("Restart application for changes to take effect."));
+                }
+            });
+        }
+        result = true;
+        emit uvcVideoSourceIDChanged();
+        emit isUvcChanged();
+    }
+#endif
+
+    return result;
+}
+
+bool VideoManager::_updateAutoStream(unsigned id)
+{
+    if (!_activeVehicle || !_activeVehicle->cameraManager()) {
+        return false;
+    }
+
+    bool settingsChanged = false;
+    
+    if (id == 0) {
+        const QGCVideoStreamInfo* const pInfo = _activeVehicle->cameraManager()->currentStreamInstance();
+        if (!pInfo) {
+            return false;
+        }
+
+        qCDebug(VideoManagerLog) << "Configure primary stream:" << pInfo->uri();
+        switch(pInfo->type()) {
+        case VIDEO_STREAM_TYPE_RTSP:
+            settingsChanged = _updateVideoUri(id, pInfo->uri());
+            if (settingsChanged) {
+                SettingsManager::instance()->videoSettings()->videoSource()->setRawValue(VideoSettings::videoSourceRTSP);
+            }
+            break;
+        case VIDEO_STREAM_TYPE_TCP_MPEG:
+            settingsChanged = _updateVideoUri(id, pInfo->uri());
+            if (settingsChanged) {
+                SettingsManager::instance()->videoSettings()->videoSource()->setRawValue(VideoSettings::videoSourceTCP);
+            }
+            break;
+        case VIDEO_STREAM_TYPE_RTPUDP: {
+            const QString url = pInfo->uri().contains("udp://") ? pInfo->uri() : QStringLiteral("udp://0.0.0.0:%1").arg(pInfo->uri());
+            settingsChanged = _updateVideoUri(id, url);
+            if (settingsChanged) {
+                SettingsManager::instance()->videoSettings()->videoSource()->setRawValue(VideoSettings::videoSourceUDPH264);
+            }
+            break;
+        }
+        case VIDEO_STREAM_TYPE_MPEG_TS:
+            settingsChanged = _updateVideoUri(id, QStringLiteral("mpegts://0.0.0.0:%1").arg(pInfo->uri()));
+            if (settingsChanged) {
+                SettingsManager::instance()->videoSettings()->videoSource()->setRawValue(VideoSettings::videoSourceMPEGTS);
+            }
+            break;
+        default:
+            settingsChanged = _updateVideoUri(id, pInfo->uri());
+            break;
+        }
+    } else if (id == 1) {
+        const QGCVideoStreamInfo* const pTinfo = _activeVehicle->cameraManager()->thermalStreamInstance();
+        if (pTinfo) {
+            qCDebug(VideoManagerLog) << "Configure secondary stream:" << pTinfo->uri();
+            switch(pTinfo->type()) {
+            case VIDEO_STREAM_TYPE_RTSP:
+            case VIDEO_STREAM_TYPE_TCP_MPEG:
+                settingsChanged = _updateVideoUri(id, pTinfo->uri());
+                break;
+            case VIDEO_STREAM_TYPE_RTPUDP:
+                settingsChanged = _updateVideoUri(id, QStringLiteral("udp://0.0.0.0:%1").arg(pTinfo->uri()));
+                break;
+            case VIDEO_STREAM_TYPE_MPEG_TS:
+                settingsChanged = _updateVideoUri(id, QStringLiteral("mpegts://0.0.0.0:%1").arg(pTinfo->uri()));
+                break;
+            default:
+                settingsChanged = _updateVideoUri(id, pTinfo->uri());
+                break;
+            }
+        }
+    }
+    // For the third stream, we can handle it manually since it doesn't have auto configuration
+    // The third stream will be configured in _updateSettings
+
+    return settingsChanged;
+}
+
+bool VideoManager::_updateSettings(unsigned id)
+{
+    if (!_videoSettings) {
+        return false;
+    }
+
+    if (id > (_videoReceiverData.size() - 1)) {
+        qCDebug(VideoManagerLog) << "Unsupported receiver id" << id;
+        return false;
+    }
+
+    bool settingsChanged = false;
+
+    const bool lowLatencyStreaming = _videoSettings->lowLatencyMode()->rawValue().toBool();
+    if (lowLatencyStreaming != _videoReceiverData[id].lowLatencyStreaming) {
+        _videoReceiverData[id].lowLatencyStreaming = lowLatencyStreaming;
+        settingsChanged = true;
+    }
+
+    settingsChanged |= _updateUVC();
+
+    if (_activeVehicle && _activeVehicle->cameraManager()) {
+        // We only handle the primary and secondary streams with auto configuration
+        if (id < 2) {
+            const QGCVideoStreamInfo* const pInfo = (id == 0) ? 
+                _activeVehicle->cameraManager()->currentStreamInstance() : 
+                _activeVehicle->cameraManager()->thermalStreamInstance();
+                
+            if (pInfo) {
+                settingsChanged |= _updateAutoStream(id);
+                return settingsChanged;
+            }
+        }
+    }
+
+    // Handle manual configuration for all streams
+    const QString source = _videoSettings->videoSource()->rawValue().toString();
+    
+    if (id == 0) {
+        // Primary stream configuration
+        if (source == VideoSettings::videoSourceUDPH264) {
+            settingsChanged |= _updateVideoUri(id, QStringLiteral("udp://0.0.0.0:%1").arg(_videoSettings->udpPort()->rawValue().toInt()));
+        } else if (source == VideoSettings::videoSourceUDPH265) {
+            settingsChanged |= _updateVideoUri(id, QStringLiteral("udp265://0.0.0.0:%1").arg(_videoSettings->udpPort()->rawValue().toInt()));
+        } else if (source == VideoSettings::videoSourceMPEGTS) {
+            settingsChanged |= _updateVideoUri(id, QStringLiteral("mpegts://0.0.0.0:%1").arg(_videoSettings->udpPort()->rawValue().toInt()));
+        } else if (source == VideoSettings::videoSourceRTSP) {
+            settingsChanged |= _updateVideoUri(id, _videoSettings->rtspUrl()->rawValue().toString());
+        } else if (source == VideoSettings::videoSourceTCP) {
+            settingsChanged |= _updateVideoUri(id, QStringLiteral("tcp://%1").arg(_videoSettings->tcpUrl()->rawValue().toString()));
+        } else if (source == VideoSettings::videoSource3DRSolo) {
+            settingsChanged |= _updateVideoUri(id, QStringLiteral("udp://0.0.0.0:5600"));
+        } else if (source == VideoSettings::videoSourceParrotDiscovery) {
+            settingsChanged |= _updateVideoUri(id, QStringLiteral("udp://0.0.0.0:8888"));
+        } else if (source == VideoSettings::videoSourceYuneecMantisG) {
+            settingsChanged |= _updateVideoUri(id, QStringLiteral("rtsp://192.168.42.1:554/live"));
+        } else if (source == VideoSettings::videoSourceHerelinkAirUnit) {
+            settingsChanged |= _updateVideoUri(id, QStringLiteral("rtsp://192.168.0.10:8554/H264Video"));
+        } else if (source == VideoSettings::videoSourceHerelinkHotspot) {
+            settingsChanged |= _updateVideoUri(id, QStringLiteral("rtsp://192.168.43.1:8554/fpv_stream"));
+        } else if (source == VideoSettings::videoDisabled || source == VideoSettings::videoSourceNoVideo) {
+            settingsChanged |= _updateVideoUri(id, "");
+        } else {
+            settingsChanged |= _updateVideoUri(id, "");
+            if (!isUvc()) {
+                qCCritical(VideoManagerLog) << "Video source URI \"" << source << "\" is not supported. Please add support!";
+            }
+        }
+    }
+    else if (id == 1) {
+        // Secondary stream configuration - uses rtspUrl1
+        const QString url = _videoSettings->rtspUrl1()->rawValue().toString();
+        if (!url.isEmpty())
