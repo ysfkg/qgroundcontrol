@@ -353,6 +353,7 @@ void QGCApplication::_initForNormalAppBoot()
     MultiVehicleManager::instance()->init();
     MAVLinkProtocol::instance()->init();
     VideoManager::instance()->init();
+    VideoManager::instance()->init1();
 
     // Image provider for Optical Flow
     _qmlAppEngine->addImageProvider(_qgcImageProviderId, new QGCImageProvider());

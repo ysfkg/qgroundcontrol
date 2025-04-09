@@ -335,7 +335,7 @@ VehicleCameraControl::toggleVideoRecording()
 bool
 VehicleCameraControl::takePhoto()
 {
-    qCDebug(CameraControlLog) << "takePhoto()";
+    qWarning() << "takePhotoaaaaaaa";
     //-- Check if camera can capture photos or if it can capture it while in Video Mode
     if(!capturesPhotos()) {
         qCWarning(CameraControlLog) << "Camera does not handle image capture";

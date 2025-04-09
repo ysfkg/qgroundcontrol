@@ -55,6 +55,7 @@ signals:
     void recordingStarted(void);
     void videoSizeChanged(QSize size);
 
+
     void onStartComplete(STATUS status);
     void onStopComplete(STATUS status);
     void onStartDecodingComplete(STATUS status);
@@ -62,6 +63,8 @@ signals:
     void onStartRecordingComplete(STATUS status);
     void onStopRecordingComplete(STATUS status);
     void onTakeScreenshotComplete(STATUS status);
+
+
 
 public slots:
     // buffer:
@@ -75,4 +78,5 @@ public slots:
     virtual void startRecording(const QString& videoFile, FILE_FORMAT format) = 0;
     virtual void stopRecording(void) = 0;
     virtual void takeScreenshot(const QString& imageFile) = 0;
+
 };

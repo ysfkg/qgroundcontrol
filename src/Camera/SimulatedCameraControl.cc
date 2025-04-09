@@ -117,7 +117,6 @@ void SimulatedCameraControl::setCameraModePhoto()
 
 bool SimulatedCameraControl::takePhoto()
 {
-    qCDebug(CameraControlLog) << "takePhoto()";
 
     if (!capturesPhotos()) {
         qCWarning(CameraControlLog) << "takePhoto: Camera does not handle image capture";
@@ -133,11 +132,15 @@ bool SimulatedCameraControl::takePhoto()
     }
 
     if (photoCaptureMode() == PHOTO_CAPTURE_SINGLE) {
+
         _vehicle->triggerSimpleCamera();
         VideoManager::instance()->grabImage();
+        VideoManager::instance()->grabImage1();
         _photoCaptureStatus = PHOTO_CAPTURE_IN_PROGRESS;
         emit photoCaptureStatusChanged();
         QTimer::singleShot(500, [this]() { _photoCaptureStatus = PHOTO_CAPTURE_IDLE; emit photoCaptureStatusChanged(); });
+
+
     } else if (photoCaptureMode() == PHOTO_CAPTURE_TIMELAPSE) {
         qgcApp()->showAppMessage(tr("Time lapse capture not supported by this camera"));
     }
@@ -165,6 +168,12 @@ bool SimulatedCameraControl::startVideoRecording()
     _videoRecordTimeUpdateTimer.start();
     _videoRecordTimeElapsedTimer.start();
     VideoManager::instance()->startRecording();
+
+    if (VideoManager::instance()->hasVideo1()) {
+        VideoManager::instance()->startRecording1();
+        qWarning() << "startVideoRecording: Camera already recording";
+    }
+
     return false;
 }
 
@@ -179,6 +188,7 @@ bool SimulatedCameraControl::stopVideoRecording()
 
     _videoRecordTimeUpdateTimer.stop();
     VideoManager::instance()->stopRecording();
+    VideoManager::instance()->stopRecording1();
     return true;
 }
 

@@ -46,7 +46,14 @@ Item {
         Component.onCompleted:  start()
     }
 
+    // First PIP display properties
     property bool   _mainWindowIsMap:       mapControl.pipState.state === mapControl.pipState.fullState
+    property bool   _mainWindowIsVideo:     videoControl.pipState.state === videoControl.pipState.fullState
+
+    // Second PIP display properties
+    property bool   _mainWindowIsMap2:      mapControl2.pipState.state === mapControl2.pipState.fullState
+    property bool   _mainWindowIsVideo2:    videoControl2.pipState.state === videoControl2.pipState.fullState
+
     property bool   _isFullWindowItemDark:  _mainWindowIsMap ? mapControl.isSatelliteMap : true
     property var    _activeVehicle:         QGroundControl.multiVehicleManager.activeVehicle
     property var    _missionController:     _planController.missionController
@@ -75,8 +82,8 @@ Item {
 
     QGCToolInsets {
         id:                     _toolInsets
-        leftEdgeBottomInset:    _pipView.leftEdgeBottomInset
-        bottomEdgeLeftInset:    _pipView.bottomEdgeLeftInset
+        leftEdgeBottomInset:    _pipView.leftEdgeBottomInset + _pipView2.leftEdgeBottomInset
+        bottomEdgeLeftInset:    Math.max(_pipView.bottomEdgeLeftInset, _pipView2.bottomEdgeLeftInset)
     }
 
     FlyViewToolBar {
@@ -91,6 +98,7 @@ Item {
         anchors.left:       parent.left
         anchors.right:      parent.right
 
+        // First Map View
         FlyViewMap {
             id:                     mapControl
             planMasterController:   _planController
@@ -102,11 +110,31 @@ Item {
             enabled:                !viewer3DWindow.isOpen
         }
 
+        // Second Map View
+        FlyViewMap {
+            id:                     mapControl2
+            planMasterController:   _planController
+            rightPanelWidth:        ScreenTools.defaultFontPixelHeight * 9
+            pipView:                _pipView2
+            pipMode:                !_mainWindowIsMap2
+            toolInsets:             customOverlay.totalToolInsets
+            mapName:                "FlightDisplayView2"
+            enabled:                !viewer3DWindow.isOpen
+        }
+
+        // First Video View
         FlyViewVideo {
             id:         videoControl
             pipView:    _pipView
         }
 
+        // Second Video View
+        FlyViewVideo1 {
+            id:         videoControl2
+            pipView:    _pipView2
+        }
+
+        // First PIP View (left)
         PipView {
             id:                     _pipView
             anchors.left:           parent.left
@@ -116,11 +144,42 @@ Item {
             item1:                  mapControl
             item2:                  QGroundControl.videoManager.hasVideo ? videoControl : null
             show:                   QGroundControl.videoManager.hasVideo && !QGroundControl.videoManager.fullScreen &&
-                                        (videoControl.pipState.state === videoControl.pipState.pipState || mapControl.pipState.state === mapControl.pipState.pipState)
+                                        (videoControl.pipState.state === videoControl.pipState.pipState ||
+                                         mapControl.pipState.state === mapControl.pipState.pipState)
             z:                      QGroundControl.zOrderWidgets
 
             property real leftEdgeBottomInset: visible ? width + anchors.margins : 0
             property real bottomEdgeLeftInset: visible ? height + anchors.margins : 0
+            onPipClicked: {
+                    if(_mainWindowIsVideo2) {
+                    _pipView2._swapPip()
+                    }
+                }
+        }
+
+        // Second PIP View (right)
+        PipView {
+            id:                     _pipView2
+            x: _pipView._isExpanded ? _pipView.x + _pipView.width + _toolsMargin
+                                        : ScreenTools.defaultFontPixelHeight * 2 + _pipView.x +_toolsMargin
+                y: parent.height - height - _toolsMargin
+            item1IsFullSettingsKey: "MainFlyWindowIsMap2"
+            item1:                  mapControl2
+            item2:                  QGroundControl.videoManager.hasVideo ? videoControl2 : null
+            show:                   QGroundControl.videoManager.hasVideo && !QGroundControl.videoManager.fullScreen &&
+                                        (videoControl2.pipState.state === videoControl2.pipState.pipState ||
+                                         mapControl2.pipState.state === mapControl2.pipState.pipState)
+            z:                      QGroundControl.zOrderWidgets
+
+            property real leftEdgeBottomInset: visible ? width + anchors.margins : 0
+            property real bottomEdgeLeftInset: visible ? height + anchors.margins : 0
+            visible: QGroundControl.videoManager.hasVideo1
+            onPipClicked: {
+                    if(_mainWindowIsVideo) {
+                    _pipView._swapPip()
+                    }
+
+                }
         }
 
         FlyViewWidgetLayer {
@@ -137,6 +196,8 @@ Item {
             isViewer3DOpen:         viewer3DWindow.isOpen
         }
 
+
+
         FlyViewCustomLayer {
             id:                 customOverlay
             anchors.fill:       widgetLayer
@@ -145,6 +206,7 @@ Item {
             mapControl:         _mapControl
             visible:            !QGroundControl.videoManager.fullScreen
         }
+
 
         // Development tool for visualizing the insets for a paticular layer, show if needed
         FlyViewInsetViewer {

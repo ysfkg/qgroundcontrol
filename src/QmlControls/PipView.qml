@@ -37,6 +37,7 @@ Item {
     property real   _maxSize:           0.75                // Percentage of parent control size
     property real   _minSize:           0.10
     property bool   _componentComplete: false
+    signal pipClicked()
 
     Component.onCompleted: {
         _initForItems()
@@ -114,7 +115,10 @@ Item {
         enabled:        _isExpanded
         preventStealing: true
         hoverEnabled:   true
-        onClicked:      _swapPip()
+        onClicked:{
+             pipClicked()
+            _swapPip()
+        }
     }
 
     // MouseArea to drag in order to resize the PiP area
@@ -199,6 +203,8 @@ Item {
         }
     }
 
+
+
     Image {
         id:             hidePIP
         source:         "/qmlimages/pipHide.svg"
@@ -212,7 +218,7 @@ Item {
         sourceSize.height:  height
         MouseArea {
             anchors.fill:   parent
-            onClicked:      _root._setPipIsExpanded(false)
+            onClicked: _root._setPipIsExpanded(false)
         }
     }
 
@@ -237,7 +243,7 @@ Item {
         }
         MouseArea {
             anchors.fill:   parent
-            onClicked:      _root._setPipIsExpanded(true)
-        }
+            onClicked: _root._setPipIsExpanded(true)
+         }
     }
 }

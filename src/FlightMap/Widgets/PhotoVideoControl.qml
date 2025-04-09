@@ -185,7 +185,6 @@ Rectangle {
                         onClicked:      toggleShooting()
 
                         function toggleShooting() {
-                            console.log("birinci")
                             if (_cameraInPhotoMode) {
 
                                 if (_camera.photoCaptureStatus === MavlinkCameraControl.PHOTO_CAPTURE_INTERVAL_IN_PROGRESS) {
