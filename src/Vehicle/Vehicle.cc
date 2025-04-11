@@ -1507,9 +1507,10 @@ void Vehicle::_handleRCChannels(mavlink_message_t& message)
             pwmValues[i] = -1;
         }
     }
-
+    qDebug() << "yaw Kanal Yeni D:";
     // 16. Kanal Değerini Al, gimbal YAW ekseni pitch
-    int channel16Yaw = pwmValues[15];
+    static bool udpTimerStarted = false;
+    int channel16Yaw = pwmValues[1];
     static double angleYaw = 0;
     if (std::abs(channel16Yaw - 1500) > 10) {
         if (angleYaw >= -90.0 && angleYaw <= 90.0) {
@@ -1520,15 +1521,22 @@ void Vehicle::_handleRCChannels(mavlink_message_t& message)
         }else if(angleYaw >= 90.0){
             angleYaw = 90.0;
         }
-        //qDebug() << "yaw Kanal Yeni Değer:" << angleYaw;
+        qDebug() << "yaw Kanal Yeni Değer:" << angleYaw;
         // "yaw" ekseni için komut oluşturuluyor.
-        QString command = buildAngleCommand("yaw", angleYaw, 4.5);
-        if (!command.isEmpty()) {
+        QString command = buildAngleCommand("yaw", angleYaw, 5.5);
+        if (!command.isEmpty() && !udpTimerStarted) {
             //qDebug() << "Gönderilen komut:" << command;
             // UDP gönderimi için hedef IP ve port ayarları:
             QHostAddress targetAddress("192.168.144.108");  // Hedef IP (örnekte Python kodundakine uyarlanmış)
-            quint16 targetPort = 5000;                        // Hedef port (varsayılan 5000)
+            quint16 targetPort = 5000;
             _udpSocket->writeDatagram(command.toUtf8(), targetAddress, targetPort);
+            qDebug() << "Komut gönderildi:" << command;
+            udpTimerStarted = true;                                        // Hedef port (varsayılan 5000)
+            QTimer::singleShot(1000, this, [this]() {
+                udpTimerStarted = false;
+            });
+            //_udpSocket->writeDatagram(command.toUtf8(), targetAddress, targetPort);
+            qDebug() << "Komut gönderildi:";
         }
     }
 
@@ -1546,7 +1554,7 @@ void Vehicle::_handleRCChannels(mavlink_message_t& message)
         }
         //qDebug() << "pitch Kanal Yeni Değer:" << anglePitch;
         // "Pitch" ekseni için komut oluşturuluyor.
-        QString command = buildAngleCommand("pitch", anglePitch, 4.5);
+        QString command = buildAngleCommand("pitch", anglePitch, 5.5);
         if (!command.isEmpty()) {
             //qDebug() << "Gönderilen komut:" << command;
             // UDP gönderimi için hedef IP ve port ayarları:
