@@ -42,6 +42,7 @@ VehicleBatteryFactGroup::VehicleBatteryFactGroup(uint8_t batteryId, Vehicle* veh
     _addFact(&_timeRemainingStrFact,        _timeRemainingStrFactName);
     _addFact(&_chargeStateFact,             _chargeStateFactName);
     _addFact(&_instantPowerFact,            _instantPowerFactName);
+    _addFact(&_failsafeBattLowVoltageDistanceFactor, "failsafeBattLowVoltageDistanceFactor");
 
     _batteryIdFact.setRawValue          (batteryId);
     _batteryFunctionFact.setRawValue    (MAV_BATTERY_FUNCTION_UNKNOWN);
@@ -54,6 +55,7 @@ VehicleBatteryFactGroup::VehicleBatteryFactGroup(uint8_t batteryId, Vehicle* veh
     _timeRemainingFact.setRawValue      (qQNaN());
     _chargeStateFact.setRawValue        (MAV_BATTERY_CHARGE_STATE_UNDEFINED);
     _instantPowerFact.setRawValue       (qQNaN());
+    _failsafeBattLowVoltageDistanceFactor.setRawValue(0);
 
 
 }
@@ -171,10 +173,39 @@ void VehicleBatteryFactGroup::_handleBatteryStatus(Vehicle* vehicle, mavlink_mes
         double percentRemaining = 100 * currentRemainingBattCapacity / battCapacity;
 
         group->percentRemaining()->setRawValue   (percentRemaining);
-        vehicle->parameterManager()->getParameter(-1, "BATT_CAPACITY")->setRawValue(5000);
+        double factor = group->failsafeBattLowVoltageDistanceFactor()->rawValue().toDouble();
         //qDebug() << "Initial battery capacity calculated:" << group->_initialRemainingBattCapacity;
-    }
 
+        double distanceToHome = vehicle->vehicleFactGroup()->getFact("distanceToHome")->rawValue().toDouble();
+
+        if (!qIsNaN(distanceToHome)) {
+            int currentDistanceGroup = static_cast<int>(distanceToHome / 50.0);
+            qDebug() << "battLowVoltage:" << battLowVoltage + (group->_lastDistanceGroup * 0.016);
+            if (totalVoltage < battLowVoltage + (group->_lastDistanceGroup * 0.016) && group->_battSwitch) {
+                group->_initialBattLowVoltage = battLowVoltage;
+                vehicle->parameterManager()->getParameter(-1, "BATT_LOW_VOLT")->setRawValue(battLowVoltage + currentDistanceGroup * (0.016 + 0.01));
+                qDebug() << "First operation after distance change." << battLowVoltage + currentDistanceGroup * (0.016 + 0.01);
+                QTimer::singleShot(11000, [vehicle, battLowVoltage, currentDistanceGroup, group]() {
+                    vehicle->parameterManager()->getParameter(-1, "BATT_LOW_VOLT")->setRawValue(group->_initialBattLowVoltage);
+                    qDebug() << "Second operation after 5 seconds." << group->_initialBattLowVoltage;
+                });
+                group->_battSwitch = false;
+            } else if(totalVoltage > 1.002 * battLowVoltage + (group->_lastDistanceGroup * 0.016) && (!group->_battSwitch)){
+                qDebug() << " Girdii" << (group->_battSwitch);
+                group->_battSwitch = true;
+            }
+
+
+            if (currentDistanceGroup != group->_lastDistanceGroup) {
+
+                qDebug() << "Distance group changed to:" << currentDistanceGroup;
+                if (qAbs(distanceToHome - group->_lastdistanceToHome)  >= 2) {
+                    group->_lastDistanceGroup = currentDistanceGroup;
+                    group->_lastdistanceToHome = 50 * currentDistanceGroup;
+                }
+            }
+        }
+    }
 }
 
 VehicleBatteryFactGroup* VehicleBatteryFactGroup::_findOrAddBatteryGroupById(Vehicle* vehicle, uint8_t batteryId)

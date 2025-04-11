@@ -33,6 +33,8 @@ public:
     Q_PROPERTY(Fact* timeRemainingStr   READ timeRemainingStr   CONSTANT)
     Q_PROPERTY(Fact* chargeState        READ chargeState        CONSTANT)
     Q_PROPERTY(Fact* instantPower       READ instantPower       CONSTANT)
+    Q_PROPERTY(Fact* failsafeBattLowVoltageDistanceFactor READ failsafeBattLowVoltageDistanceFactor CONSTANT)
+
 
     Fact* id                        () { return &_batteryIdFact; }
     Fact* function                  () { return &_batteryFunctionFact; }
@@ -46,6 +48,8 @@ public:
     Fact* timeRemaining             () { return &_timeRemainingFact; }
     Fact* timeRemainingStr          () { return &_timeRemainingStrFact; }
     Fact* chargeState               () { return &_chargeStateFact; }
+    Fact* failsafeBattLowVoltageDistanceFactor() { return &_failsafeBattLowVoltageDistanceFactor; }
+
 
     /// Creates a new fact group for the battery id as needed and updates the Vehicle with it
     static void handleMessageForFactGroupCreation(Vehicle* vehicle, mavlink_message_t& message);
@@ -63,7 +67,11 @@ private:
     static void                     _handleBatteryStatus        (Vehicle* vehicle, mavlink_message_t& message);
 
     bool _isFirstTime = true;
+    bool _battSwitch = true;
     double _initialRemainingBattCapacity = qQNaN();
+    double _initialBattLowVoltage = qQNaN();
+    int _lastDistanceGroup = -1;
+    int  _lastdistanceToHome = -1;
 
     static VehicleBatteryFactGroup* _findOrAddBatteryGroupById  (Vehicle* vehicle, uint8_t batteryId);
 
@@ -94,5 +102,6 @@ private:
     Fact            _timeRemainingStrFact;
     Fact            _chargeStateFact;
     Fact            _instantPowerFact;
+    Fact _failsafeBattLowVoltageDistanceFactor;
     Vehicle* _vehicle;
 };

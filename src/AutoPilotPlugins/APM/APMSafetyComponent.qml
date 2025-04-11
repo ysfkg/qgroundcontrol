@@ -96,6 +96,13 @@ SetupPage {
                             Layout.fillWidth:   true
                         }
 
+                        QGCLabel { text: qsTr("Low voltage correction factor:") }
+                        FactTextField {
+                            fact:               failsafeBattLowVoltageDistanceFactor
+                            showUnits:          true
+                            Layout.fillWidth:   true
+                        }
+
 
                         QGCLabel { text: qsTr("Critical voltage threshold:") }
                         FactTextField {
@@ -166,6 +173,7 @@ SetupPage {
                         property Fact failsafeBattLowMah:       _failsafeBatt1LowMah
                         property Fact failsafeBattCritMah:      _failsafeBatt1CritMah
                         property Fact failsafeBattLowVoltage:   _failsafeBatt1LowVoltage
+                        property Fact failsafeBattLowVoltageDistanceFactor:   failsafeBattLowVoltageDistanceFactor
                         property Fact failsafeBattCritVoltage:  _failsafeBatt1CritVoltage
                     }
                 } // Rectangle
