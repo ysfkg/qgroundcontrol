@@ -9,5 +9,6 @@
   </a>
 </p>
 
-
-Kamera Video Kaydı ve Fotoğraf Çekilen Versiyonu. Gimbal hareketi için de komutlar eklendi.
+V1.0
++Kamera Video Kaydı ve Fotoğraf Çekilmeme sorunu giderildi. 
++Gimbal hareketi için de komutlar eklendi.
