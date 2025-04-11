@@ -27,7 +27,7 @@ ColumnLayout {
     property real   _tightDefaultFontHeight:        ScreenTools.defaultFontPixelHeight - _doubleDescent
     property var    _rgFontSizeTightHeights:        [ _tightDefaultFontHeight * _rgFontSizeRatios[0] + 2, _tightDefaultFontHeight * _rgFontSizeRatios[1] + 2, _tightDefaultFontHeight * _rgFontSizeRatios[2] + 2, _tightDefaultFontHeight * _rgFontSizeRatios[3] + 2 ]
     property real   _tightHeight:                   _rgFontSizeTightHeights[instrumentValueData.factValueGrid.fontSize]
-    property real   _fontSize:                      _rgFontSizes[instrumentValueData.factValueGrid.fontSize]
+    property real   _fontSize:                      _rgFontSizes[instrumentValueData.factValueGrid.fontSize]/1.5
     property real   _horizontalLabelSpacing:        ScreenTools.defaultFontPixelWidth
     property real   _width:                         0
     property real   _height:                        0

@@ -19,14 +19,14 @@ Item {
     id:             control
     implicitWidth:  (compassRadius * 2) + attitudeSpacing + attitudeSize
     implicitHeight: implicitWidth
-
+    //visible: false
     property real attitudeSize:         rollIndicator.attitudeSize
     property real attitudeSpacing:      rollIndicator.attitudeSpacing
     property real extraInset:           attitudeSize + attitudeSpacing
     property real extraValuesWidth:     compassRadius
     property real defaultCompassRadius: (mainWindow.width * 0.15) / 2
-    property real maxCompassRadius:     ScreenTools.defaultFontPixelHeight * 7 / 2
-    property real compassRadius:        Math.min(defaultCompassRadius, maxCompassRadius)
+    property real maxCompassRadius:     ScreenTools.defaultFontPixelHeight * 7 / 2   //
+    property real compassRadius:        Math.min(defaultCompassRadius, maxCompassRadius) / 1.15
     property real compassBorder:        ScreenTools.defaultFontPixelHeight / 2
     property var  vehicle:              globals.activeVehicle
     property var  qgcPal:               QGroundControl.globalPalette
@@ -56,7 +56,7 @@ Item {
         color:  qgcPal.window
 
         QGCCompassWidget {
-            size:               parent.width - compassBorder
+            size:               parent.width - compassBorder/20
             vehicle:            globals.activeVehicle
             anchors.centerIn:   parent
         }

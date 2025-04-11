@@ -18,7 +18,7 @@ import QGroundControl.Vehicle
 /// Marker for displaying a mission item on the map
 MapQuickItem {
     id: _item
-
+    visible: true
     property var missionItem
     property int sequenceNumber
 

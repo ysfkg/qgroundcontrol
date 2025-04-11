@@ -23,8 +23,8 @@ import QGroundControl.FactSystem
 import QGroundControl.FactControls
 
 Rectangle {
-    width:      mainLayout.width + (_margins * 2)
-    height:     mainLayout.height + (_margins * 2)
+    width:      mainLayout.width + (_margins )
+    height:     mainLayout.height + (_margins )
     color:      Qt.rgba(qgcPal.window.r, qgcPal.window.g, qgcPal.window.b, 0.5)
     radius:     _margins
     visible:    _camera.capturesVideo || _camera.capturesPhotos
@@ -47,10 +47,10 @@ Rectangle {
 
     RowLayout {
         id:                 mainLayout
-        anchors.margins:    _margins
+        anchors.margins:    _margins/2
         anchors.top:        parent.top
         anchors.left:       parent.left
-        spacing:            _margins
+        spacing:            _margins/2
 
         ColumnLayout {
             Layout.fillHeight:  true
@@ -76,10 +76,10 @@ Rectangle {
         }
 
         ColumnLayout {
-            spacing: _margins * 2
+            spacing: _margins/3
 
             ColumnLayout {
-                spacing: _margins
+                spacing: _margins/2
 
                 // Camera name
                 QGCLabel {
@@ -208,7 +208,7 @@ Rectangle {
                     color:                  !_videoCaptureIdle && !_photoCaptureIdle ? "transparent" : qgcPal.colorRed
                     Layout.preferredWidth:  (_cameraInVideoMode ? videoRecordTime.width : photoCaptureCount.width) + (_smallMargins * 2)
                     Layout.preferredHeight: (_cameraInVideoMode ? videoRecordTime.height : photoCaptureCount.height)
-                    radius:                 _margins / 2
+                    radius:                 _margins / 2.5
 
                     // Video record time
                     QGCLabel {
@@ -217,7 +217,7 @@ Rectangle {
                         anchors.left:       parent.left
                         anchors.top:        parent.top
                         text:               _videoCaptureIdle ? "00:00:00" : _camera.recordTimeStr
-                        font.pointSize:     ScreenTools.largeFontPointSize
+                        font.pointSize:     ScreenTools.largeFontPointSize/1.6
                         visible:            _cameraInVideoMode
                     }
 
@@ -228,7 +228,7 @@ Rectangle {
                         anchors.left:       parent.left
                         anchors.top:        parent.top
                         text:               _activeVehicle ? ('00000' + _activeVehicle.cameraTriggerPoints.count).slice(-5) : "00000"
-                        font.pointSize:     ScreenTools.largeFontPointSize
+                        font.pointSize:     ScreenTools.largeFontPointSize/1.6
                         visible:            _cameraInPhotoMode
                     }
                 }

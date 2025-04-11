@@ -19,7 +19,7 @@ class VehicleBatteryFactGroup : public FactGroup
     Q_OBJECT
 
 public:
-    VehicleBatteryFactGroup(uint8_t batteryId, QObject* parent = nullptr);
+    VehicleBatteryFactGroup(uint8_t batteryId,Vehicle* vehicle, QObject* parent = nullptr);
 
     Q_PROPERTY(Fact* id                 READ id                 CONSTANT)
     Q_PROPERTY(Fact* function           READ function           CONSTANT)
@@ -55,11 +55,16 @@ public:
 
 private slots:
     void _timeRemainingChanged(QVariant value);
+    void                     _printBatteryInfoToConsole        (Vehicle* vehicle);
 
 private:
     static void                     _handleHighLatency          (Vehicle* vehicle, mavlink_message_t& message);
     static void                     _handleHighLatency2         (Vehicle* vehicle, mavlink_message_t& message);
     static void                     _handleBatteryStatus        (Vehicle* vehicle, mavlink_message_t& message);
+
+    bool _isFirstTime = true;
+    double _initialRemainingBattCapacity = qQNaN();
+
     static VehicleBatteryFactGroup* _findOrAddBatteryGroupById  (Vehicle* vehicle, uint8_t batteryId);
 
     static const char* _batteryFactGroupNamePrefix;
@@ -89,4 +94,5 @@ private:
     Fact            _timeRemainingStrFact;
     Fact            _chargeStateFact;
     Fact            _instantPowerFact;
+    Vehicle* _vehicle;
 };

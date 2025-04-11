@@ -83,7 +83,7 @@ Rectangle {
         }
 
         CompassHeadingIndicator {
-            compassSize:    size
+            compassSize:    size/1.3
             heading:        _heading
             simplified:     usedByMultipleVehicleList
         }
@@ -148,8 +148,9 @@ Rectangle {
 
     QGCLabel {
         anchors.horizontalCenter:   parent.horizontalCenter
-        y:                          size * 0.74
+        y:                          size * 0.7
         text:                       vehicle && !usedByMultipleVehicleList ? _heading.toFixed(0) + "°" : ""
         horizontalAlignment:        Text.AlignHCenter
+        font.pixelSize: ScreenTools.defaultFontPixelHeight/1.8
     }
 }
