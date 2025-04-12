@@ -86,6 +86,7 @@ bool SimulatedCameraControl::toggleVideoRecording()
     if(videoCaptureStatus() == VIDEO_CAPTURE_STATUS_RUNNING) {
         return stopVideoRecording();
     } else {
+        qWarning() << "girdiii";
         return startVideoRecording();
     }
 }
@@ -169,9 +170,10 @@ bool SimulatedCameraControl::startVideoRecording()
     _videoRecordTimeElapsedTimer.start();
     VideoManager::instance()->startRecording();
 
-    if (VideoManager::instance()->hasVideo1()) {
-        VideoManager::instance()->startRecording1();
-        qWarning() << "startVideoRecording: Camera already recording";
+    if (VideoManager::instance()->decoding1()) {
+        QTimer::singleShot(100, []() {
+            VideoManager::instance()->startRecording1();
+        });
     }
 
     return false;
@@ -188,7 +190,11 @@ bool SimulatedCameraControl::stopVideoRecording()
 
     _videoRecordTimeUpdateTimer.stop();
     VideoManager::instance()->stopRecording();
-    VideoManager::instance()->stopRecording1();
+    if (VideoManager::instance()->decoding1()) {
+        QTimer::singleShot(100, []() {
+            VideoManager::instance()->stopRecording1();
+        });
+    }
     return true;
 }
 

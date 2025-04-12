@@ -20,6 +20,8 @@
 #include <QtCore/QDebug>
 #include <QtCore/QUrl>
 #include <QtCore/QDateTime>
+#include <gst/app/gstappsink.h>
+
 
 QGC_LOGGING_CATEGORY(VideoReceiverLog, "VideoReceiverLog")
 
@@ -67,8 +69,7 @@ GstVideoReceiver::~GstVideoReceiver(void)
     _slotHandler.shutdown();
 }
 
-void
-GstVideoReceiver::start(const QString& uri, unsigned timeout, int buffer)
+void GstVideoReceiver::start(const QString& uri, unsigned timeout, int buffer)
 {
     if (_needDispatch()) {
         QString cachedUri = uri;
@@ -107,6 +108,7 @@ GstVideoReceiver::start(const QString& uri, unsigned timeout, int buffer)
 
     GstElement* decoderQueue = nullptr;
     GstElement* recorderQueue = nullptr;
+    GstElement* appsink = nullptr;
 
     do {
         if((_tee = gst_element_factory_make("tee", nullptr)) == nullptr)  {
@@ -151,6 +153,33 @@ GstVideoReceiver::start(const QString& uri, unsigned timeout, int buffer)
 
         g_object_set(_recorderValve, "drop", TRUE, nullptr);
 
+                // appsink oluştur
+        if ((appsink = gst_element_factory_make("appsink", "appsink0")) == nullptr) {
+            qCCritical(VideoReceiverLog) << "gst_element_factory_make('appsink') failed";
+            break;
+        }
+
+        g_object_set(appsink,
+                     "emit-signals", TRUE,
+                     "sync", FALSE,
+                     "max-buffers", 1,
+                     "drop", TRUE,
+                     nullptr);
+
+        g_signal_connect(appsink, "new-sample", G_CALLBACK(+[](GstAppSink* sink, gpointer user_data) -> GstFlowReturn {
+                             GstSample* sample = gst_app_sink_pull_sample(sink);
+                             if (sample) {
+                                 GstBuffer* buffer = gst_sample_get_buffer(sample);
+                                 GstCaps* caps = gst_sample_get_caps(sample);
+
+                                         // Örnek olarak log yazabiliriz
+                                 qDebug() << "Received frame from appsink";
+
+                                 gst_sample_unref(sample);
+                             }
+                             return GST_FLOW_OK;
+                         }), nullptr);
+
         if ((_pipeline = gst_pipeline_new("receiver")) == nullptr) {
             qCCritical(VideoReceiverLog) << "gst_pipeline_new() failed";
             break;
@@ -163,12 +192,19 @@ GstVideoReceiver::start(const QString& uri, unsigned timeout, int buffer)
             break;
         }
 
-        gst_bin_add_many(GST_BIN(_pipeline), _source, _tee, decoderQueue, _decoderValve, recorderQueue, _recorderValve, nullptr);
+        gst_bin_add_many(GST_BIN(_pipeline),
+                         _source,
+                         _tee,
+                         decoderQueue,
+                         _decoderValve,
+                         appsink,
+                         recorderQueue,
+                         _recorderValve,
+                         nullptr);
 
         pipelineUp = true;
 
         GstPad* srcPad = nullptr;
-
         GstIterator* it;
 
         if ((it = gst_element_iterate_src_pads(_source)) != nullptr) {
@@ -192,8 +228,8 @@ GstVideoReceiver::start(const QString& uri, unsigned timeout, int buffer)
             g_signal_connect(_source, "pad-added", G_CALLBACK(_onNewPad), this);
         }
 
-        if(!gst_element_link_many(_tee, decoderQueue, _decoderValve, nullptr)) {
-            qCCritical(VideoReceiverLog) << "Unable to link decoder queue";
+        if(!gst_element_link_many(_tee, decoderQueue, _decoderValve, appsink, nullptr)) {
+            qCCritical(VideoReceiverLog) << "Unable to link decoder queue to appsink";
             break;
         }
 
@@ -218,14 +254,12 @@ GstVideoReceiver::start(const QString& uri, unsigned timeout, int buffer)
     if (!running) {
         qCCritical(VideoReceiverLog) << "Failed";
 
-        // In newer versions, the pipeline will clean up all references that are added to it
         if (_pipeline != nullptr) {
             gst_element_set_state(_pipeline, GST_STATE_NULL);
             gst_object_unref(_pipeline);
             _pipeline = nullptr;
         }
 
-        // If we failed before adding items to the pipeline, then clean up
         if (!pipelineUp) {
             if (_recorderValve != nullptr) {
                 gst_object_unref(_recorderValve);
@@ -245,6 +279,11 @@ GstVideoReceiver::start(const QString& uri, unsigned timeout, int buffer)
             if (decoderQueue != nullptr) {
                 gst_object_unref(decoderQueue);
                 decoderQueue = nullptr;
+            }
+
+            if (appsink != nullptr) {
+                gst_object_unref(appsink);
+                appsink = nullptr;
             }
 
             if (_tee != nullptr) {
@@ -270,6 +309,8 @@ GstVideoReceiver::start(const QString& uri, unsigned timeout, int buffer)
         });
     }
 }
+
+
 
 void
 GstVideoReceiver::stop(void)
@@ -613,8 +654,7 @@ GstVideoReceiver::stopRecording(void)
     });
 }
 
-void
-GstVideoReceiver::takeScreenshot(const QString& imageFile)
+void GstVideoReceiver::takeScreenshot(const QString& imageFile)
 {
     if (_needDispatch()) {
         QString cachedImageFile = imageFile;
@@ -623,12 +663,9 @@ GstVideoReceiver::takeScreenshot(const QString& imageFile)
         });
         return;
     }
-
-    // FIXME: AV: record screenshot here
-    _dispatchSignal([this](){
-        emit onTakeScreenshotComplete(STATUS_NOT_IMPLEMENTED);
-    });
 }
+
+
 
 const char* GstVideoReceiver::_kFileMux[FILE_FORMAT_MAX - FILE_FORMAT_MIN] = {
     "matroskamux",
@@ -1615,3 +1652,4 @@ GstVideoReceiver::_keyframeWatch(GstPad* pad, GstPadProbeInfo* info, gpointer us
 
     return GST_PAD_PROBE_REMOVE;
 }
+
