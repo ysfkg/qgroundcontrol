@@ -1507,7 +1507,6 @@ void Vehicle::_handleRCChannels(mavlink_message_t& message)
             pwmValues[i] = -1;
         }
     }
-    qDebug() << "yaw Kanal Yeni D:";
     // 16. Kanal Değerini Al, gimbal YAW ekseni pitch
     static bool udpTimerStarted = false;
     int channel16Yaw = pwmValues[1];
@@ -1521,22 +1520,16 @@ void Vehicle::_handleRCChannels(mavlink_message_t& message)
         }else if(angleYaw >= 90.0){
             angleYaw = 90.0;
         }
-        qDebug() << "yaw Kanal Yeni Değer:" << angleYaw;
         // "yaw" ekseni için komut oluşturuluyor.
         QString command = buildAngleCommand("yaw", angleYaw, 5.5);
         if (!command.isEmpty() && !udpTimerStarted) {
-            //qDebug() << "Gönderilen komut:" << command;
-            // UDP gönderimi için hedef IP ve port ayarları:
             QHostAddress targetAddress("192.168.144.108");  // Hedef IP (örnekte Python kodundakine uyarlanmış)
             quint16 targetPort = 5000;
             _udpSocket->writeDatagram(command.toUtf8(), targetAddress, targetPort);
-            qDebug() << "Komut gönderildi:" << command;
             udpTimerStarted = true;                                        // Hedef port (varsayılan 5000)
             QTimer::singleShot(1000, this, [this]() {
                 udpTimerStarted = false;
             });
-            //_udpSocket->writeDatagram(command.toUtf8(), targetAddress, targetPort);
-            qDebug() << "Komut gönderildi:";
         }
     }
 
@@ -1555,19 +1548,37 @@ void Vehicle::_handleRCChannels(mavlink_message_t& message)
         //qDebug() << "pitch Kanal Yeni Değer:" << anglePitch;
         // "Pitch" ekseni için komut oluşturuluyor.
         QString command = buildAngleCommand("pitch", anglePitch, 5.5);
-        if (!command.isEmpty()) {
-            //qDebug() << "Gönderilen komut:" << command;
-            // UDP gönderimi için hedef IP ve port ayarları:
+        if (!command.isEmpty() && !udpTimerStarted) {
             QHostAddress targetAddress("192.168.144.108");  // Hedef IP (örnekte Python kodundakine uyarlanmış)
-            quint16 targetPort = 5000;                        // Hedef port (varsayılan 5000)
+            quint16 targetPort = 5000;
             _udpSocket->writeDatagram(command.toUtf8(), targetAddress, targetPort);
+            udpTimerStarted = true;                                        // Hedef port (varsayılan 5000)
+            QTimer::singleShot(1000, this, [this]() {
+                udpTimerStarted = false;
+            });
         }
     }
 
+    static int lastPwm14 = -1;
     // kanal 14
-    if(pwmValues[13] > 1500){
+    if(qAbs(pwmValues[13] - lastPwm14) > 10){
+        lastPwm14 = pwmValues[13];
         QString command1 = buildAngleCommand("yaw", 0, 5.5);
         QString command2 = buildAngleCommand("pitch", 0, 5.5);
+        if (!command1.isEmpty()) {
+            QHostAddress targetAddress("192.168.144.108");  // Hedef IP (örnekte Python kodundakine uyarlanmış)
+            quint16 targetPort = 5000;                        // Hedef port (varsayılan 5000)
+            _udpSocket->writeDatagram(command1.toUtf8(), targetAddress, targetPort);
+            _udpSocket->writeDatagram(command2.toUtf8(), targetAddress, targetPort);
+        }
+
+    }
+    static int lastPwm13 = -1;
+    // kanal 13
+    if(qAbs(pwmValues[12] - lastPwm13) > 10){
+        lastPwm13 = pwmValues[12];
+        QString command1 = buildAngleCommand("yaw", 0, 5.5);
+        QString command2 = buildAngleCommand("pitch", -90, 5.5);
         if (!command1.isEmpty()) {
             QHostAddress targetAddress("192.168.144.108");  // Hedef IP (örnekte Python kodundakine uyarlanmış)
             quint16 targetPort = 5000;                        // Hedef port (varsayılan 5000)
