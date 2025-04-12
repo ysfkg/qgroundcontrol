@@ -462,6 +462,7 @@ void VideoManager::stopRecording1()
 
 void VideoManager::grabImage(const QString &imageFile)
 {
+
     if (imageFile.isEmpty()) {
         _imageFile = SettingsManager::instance()->appSettings()->photoSavePath();
         _imageFile += "/" + QDateTime::currentDateTime().toString("yyyy-MM-dd_hh.mm.ss_1") + ".jpg";
@@ -469,7 +470,7 @@ void VideoManager::grabImage(const QString &imageFile)
         _imageFile = imageFile;
     }
 
-    emit imageFileChanged();
+   // emit imageFileChanged();
 
     _videoReceiverData[0].receiver->takeScreenshot(_imageFile);
 }
