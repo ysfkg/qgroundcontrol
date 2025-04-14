@@ -68,6 +68,8 @@ public:
     Q_INVOKABLE void stopRecording();
     Q_INVOKABLE void stopVideo();
 
+
+
     void init();
     void cleanup();
     bool autoStreamConfigured() const;

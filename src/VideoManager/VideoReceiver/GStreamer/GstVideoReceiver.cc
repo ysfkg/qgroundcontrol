@@ -132,12 +132,27 @@ GstVideoReceiver::start(const QString& uri, unsigned timeout, int buffer)
             break;
         }
 
+           // DEĞİŞTİRDİM
+        g_object_set(decoderQueue,
+                     "leaky", 2,                        // downstream
+                     "max-size-buffers", 1,
+                     "max-size-bytes", 0,              // Sınırsız değil → sıfır, buffer boyutu üzerinden sınır koymaz
+                     "max-size-time", (guint64)0,      // Zaman bazlı gecikme yok
+                     NULL);
+
+        g_object_set(recorderQueue,
+                     "leaky", 2,
+                     "max-size-buffers", 1,
+                     "max-size-bytes", 0,
+                     "max-size-time", (guint64)0,
+                     NULL);
+
         if((_decoderValve = gst_element_factory_make("valve", nullptr)) == nullptr)  {
             qCCritical(VideoReceiverLog) << "gst_element_factory_make('valve') failed";
             break;
         }
 
-        g_object_set(_decoderValve, "drop", TRUE, nullptr);
+        g_object_set(_decoderValve, "drop", FALSE, nullptr);    // DEĞİŞTİRDİM
 
         if((recorderQueue = gst_element_factory_make("queue", nullptr)) == nullptr)  {
             qCCritical(VideoReceiverLog) << "gst_element_factory_make('queue') failed";
@@ -149,7 +164,7 @@ GstVideoReceiver::start(const QString& uri, unsigned timeout, int buffer)
             break;
         }
 
-        g_object_set(_recorderValve, "drop", TRUE, nullptr);
+        g_object_set(_recorderValve, "drop", FALSE, nullptr);   // DEĞİŞTİRDİM
 
         if ((_pipeline = gst_pipeline_new("receiver")) == nullptr) {
             qCCritical(VideoReceiverLog) << "gst_pipeline_new() failed";
@@ -622,10 +637,7 @@ GstVideoReceiver::takeScreenshot(const QString& imageFile)
         return;
     }
 
-    // FIXME: AV: record screenshot here
-    _dispatchSignal([this](){
-        emit onTakeScreenshotComplete(STATUS_NOT_IMPLEMENTED);
-    });
+  
 }
 
 const char* GstVideoReceiver::_kFileMux[FILE_FORMAT_MAX - FILE_FORMAT_MIN] = {
@@ -723,14 +735,14 @@ GstVideoReceiver::_filterParserCaps(GstElement* bin, GstPad* pad, GstElement* el
     if(gst_structure_has_name(structure, "video/x-h265")){
         filter = gst_caps_from_string("video/x-h265");
         if (gst_caps_can_intersect(srcCaps, filter)) {
-            sinkCaps = gst_caps_from_string("video/x-h265,stream-format=hvc1");
+            sinkCaps = gst_caps_from_string("video/x-h265,stream-format=hvc1,alignment=au");
         }
         gst_caps_unref(filter);
         filter = nullptr;
     } else if(gst_structure_has_name(structure, "video/x-h264")){
         filter = gst_caps_from_string("video/x-h264");
         if (gst_caps_can_intersect(srcCaps, filter)) {
-            sinkCaps = gst_caps_from_string("video/x-h264,stream-format=avc");
+            sinkCaps = gst_caps_from_string("video/x-h264,stream-format=avc,alignment=au");
         }
         gst_caps_unref(filter);
         filter = nullptr;
@@ -778,7 +790,17 @@ GstVideoReceiver::_makeSource(const QString& uri)
             }
         } else if (isRtsp) {
             if ((source = gst_element_factory_make("rtspsrc", "source")) != nullptr) {
-                g_object_set(static_cast<gpointer>(source), "location", qPrintable(uri), "latency", 17, "udp-reconnect", 1, "timeout", _udpReconnect_us, NULL);
+                //g_object_set(static_cast<gpointer>(source), "location", qPrintable(uri), "latency", 10, "udp-reconnect", 1, "timeout", _udpReconnect_us, NULL);  // DeĞİŞTİRDİM
+                g_object_set(static_cast<gpointer>(source),
+                             "location", qPrintable(uri),
+                             "latency", 10,
+                             "udp-reconnect", 1,
+                             "timeout", _udpReconnect_us,
+                             "drop-on-latency", TRUE,
+                             "ntp-sync", FALSE,
+                             "do-retransmission", FALSE,
+                             "buffer-mode", 0,       // DEĞİŞTİRDİM 4 DENE BİRDE
+                             NULL);
             }
         } else if(isUdp264 || isUdp265 || isUdpMPEGTS) {
             if ((source = gst_element_factory_make("udpsrc", "source")) != nullptr) {
@@ -851,11 +873,19 @@ GstVideoReceiver::_makeSource(const QString& uri)
         gst_element_foreach_src_pad(source, _padProbe, &probeRes);
 
         if (probeRes & 1) {
-            if (probeRes & 2 && _buffer >= 0) {
+            if (probeRes & 2 && -1 >= 0) {
                 if ((buffer = gst_element_factory_make("rtpjitterbuffer", nullptr)) == nullptr) {
                     qCCritical(VideoReceiverLog) << "gst_element_factory_make('rtpjitterbuffer') failed";
                     break;
                 }
+
+                g_object_set(buffer,
+                             "latency", 0,   // veya 5
+                             "do-lost", TRUE,
+                             "drop-on-latency", TRUE,
+                             "mode", 0,  // 0=slave to pipeline clock (best for low-latency)
+                             NULL);
+
 
                 gst_bin_add(GST_BIN(bin), buffer);
 
@@ -916,12 +946,42 @@ GstVideoReceiver::_makeDecoder(GstCaps* caps, GstElement* videoSink)
     Q_UNUSED(videoSink)
     GstElement* decoder = nullptr;
 
+
+
+    // DEĞİŞTİRDİM
+    /*
     do {
         if ((decoder = gst_element_factory_make("decodebin3", nullptr)) == nullptr) {
             qCCritical(VideoReceiverLog) << "gst_element_factory_make('decodebin3') failed";
             break;
         }
-    } while(0);
+    } while(0);*/
+
+
+    const char* hwDecoders[] = {
+        "amcviddec-264",
+        "omxqcomvideodecoderavc",
+        "omxgoogleh264decoder"
+    };
+
+
+    for (auto name : hwDecoders) {
+        decoder = gst_element_factory_make(name, "hwdecoder");
+        if (decoder) {
+            qDebug() << "Using hardware decoder:" << name;
+            break;
+        }
+    }
+
+    if (!decoder) {
+        decoder = gst_element_factory_make("avdec_h264", nullptr); // fallback
+        qWarning() << "Using SOFTWARE decoder (avdec_h264)";
+    }
+
+    if (decoder && g_object_class_find_property(G_OBJECT_GET_CLASS(decoder), "low-latency")) {
+        g_object_set(decoder, "low-latency", TRUE, NULL);
+        qDebug() << "Enabled low-latency mode on decoder";
+    }
 
     return decoder;
 }
@@ -944,6 +1004,11 @@ GstVideoReceiver::_makeFileSink(const QString& videoFile, FILE_FORMAT format)
         if ((mux = gst_element_factory_make(_kFileMux[format - FILE_FORMAT_MIN], nullptr)) == nullptr) {
             qCCritical(VideoReceiverLog) << "gst_element_factory_make('" << _kFileMux[format - FILE_FORMAT_MIN] << "') failed";
             break;
+        }
+        if (format == FILE_FORMAT_MP4) {
+            g_object_set(mux, "streamable", TRUE, NULL);
+        } else if (videoFile.endsWith(".mp4")) {
+            g_object_set(mux, "streamable", TRUE, NULL);
         }
 
         if ((sink = gst_element_factory_make("filesink", nullptr)) == nullptr) {
@@ -1154,7 +1219,8 @@ GstVideoReceiver::_addVideoSink(GstPad* pad)
 
     gst_element_sync_state_with_parent(_videoSink);
 
-    g_object_set(_videoSink, "sync", _buffer >= 0, NULL);
+    //g_object_set(_videoSink, "sync", _buffer >= 0, NULL);    // DEĞİŞTİRDİM
+    g_object_set(G_OBJECT(_videoSink), "sync", FALSE, NULL);
 
     GST_DEBUG_BIN_TO_DOT_FILE(GST_BIN(_pipeline), GST_DEBUG_GRAPH_SHOW_ALL, "pipeline-with-videosink");
 

@@ -278,7 +278,7 @@ void VideoManager::grabImage(const QString &imageFile)
         _imageFile = imageFile;
     }
 
-    emit imageFileChanged();
+    //emit imageFileChanged();
 
     _videoReceiverData[0].receiver->takeScreenshot(_imageFile);
 }

@@ -75,4 +75,5 @@ public slots:
     virtual void startRecording(const QString& videoFile, FILE_FORMAT format) = 0;
     virtual void stopRecording(void) = 0;
     virtual void takeScreenshot(const QString& imageFile) = 0;
+
 };
