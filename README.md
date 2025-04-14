@@ -14,5 +14,5 @@
 +Kamera görüntü gecikemsi azaltılmaya çalışıldı  
 +Kamera görüntüsü yakınlaştırma eklendi
 
-************************** v1.0.1 **********************  Üsttekiler ile birleştirildi
+************************** v1.0.1 **********************  Üsttekiler ile birleştirildi  
 +Kamera fotoğraf çekme komutları eklendi 
