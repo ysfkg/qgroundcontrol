@@ -12,5 +12,6 @@
 
 +Gimbal hareket komutları eklendi  
 +Kamera görüntü gecikemsi azaltılmaya çalışıldı  
++Kamera görüntüsü yakınlaştırma eklendi
 
 
