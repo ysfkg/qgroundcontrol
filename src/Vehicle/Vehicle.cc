@@ -1522,7 +1522,6 @@ void Vehicle::_handleRCChannels(mavlink_message_t& message)
         //qDebug() << "yaw Kanal Yeni Değer:" << angleYaw;
         // "yaw" ekseni için komut oluşturuluyor.
         double speed = 1 + (std::abs(channel16Yaw - 1500) / 33.5);
-        qDebug() << "yaw Kanal Yeni speed Değer:" << speed;
         QString command = buildAngleCommand("yaw", angleYaw, speed);
         if (!command.isEmpty()) {
             QHostAddress targetAddress("192.168.144.108");  // Hedef IP (örnekte Python kodundakine uyarlanmış)
