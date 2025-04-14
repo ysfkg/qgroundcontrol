@@ -9,6 +9,7 @@
   </a>
 </p>
 ************************** v1.0 ************************  
+
 +Gimbal hareket komutları eklendi  
 +Kamera görüntü gecikemsi azaltılmaya çalışıldı  
 
