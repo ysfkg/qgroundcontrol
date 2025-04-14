@@ -21,6 +21,10 @@
 #include <QtCore/QUrl>
 #include <QtCore/QDateTime>
 
+#include <gst/app/gstappsink.h>
+#include <QImage>
+#include <QFile>
+
 QGC_LOGGING_CATEGORY(VideoReceiverLog, "VideoReceiverLog")
 
 //-----------------------------------------------------------------------------
@@ -447,6 +451,9 @@ GstVideoReceiver::startDecoding(void* sink)
     _videoSink = videoSink;
     gst_object_ref(_videoSink);
 
+    g_object_set(_videoSink, "enable-last-sample", TRUE, NULL);
+
+
     _removingDecoder = false;
 
     if (!_streaming) {
@@ -626,8 +633,9 @@ GstVideoReceiver::stopRecording(void)
     });
 }
 
-void
-GstVideoReceiver::takeScreenshot(const QString& imageFile)
+
+
+void GstVideoReceiver::takeScreenshot(const QString& imageFile)
 {
     if (_needDispatch()) {
         QString cachedImageFile = imageFile;
@@ -637,8 +645,52 @@ GstVideoReceiver::takeScreenshot(const QString& imageFile)
         return;
     }
 
-  
+    if (!_videoSink) {
+        qWarning() << "No video sink available";
+        return;
+    }
+
+            // qgcvideosinkbin içindeki qmlglsink üzerinden sample al
+    GstSample* sample = nullptr;
+    g_object_get(_videoSink, "last-sample", &sample, NULL);
+
+    if (!sample) {
+        qWarning() << "No last-sample available from sink";
+        return;
+    }
+
+    GstBuffer* buffer = gst_sample_get_buffer(sample);
+    GstCaps* caps = gst_sample_get_caps(sample);
+    GstStructure* s = gst_caps_get_structure(caps, 0);
+
+    int width, height;
+    gst_structure_get_int(s, "width", &width);
+    gst_structure_get_int(s, "height", &height);
+
+    GstMapInfo map;
+    if (gst_buffer_map(buffer, &map, GST_MAP_READ)) {
+        const gchar* pixFormat = gst_structure_get_string(s, "format");
+
+        if (pixFormat && strcmp(pixFormat, "GRAY8") == 0) {
+            QImage image((uchar*)map.data, width, height, QImage::Format_Grayscale8);
+            image.save(imageFile);
+            qDebug() << "Saved grayscale image to" << imageFile;
+        } else {
+            QImage image((uchar*)map.data, width, height, QImage::Format_RGB888);
+            image.save(imageFile);
+            qDebug() << "Saved RGB image to" << imageFile;
+        }
+
+        gst_buffer_unmap(buffer, &map);
+    }
+     else {
+        qWarning() << "Failed to map video buffer";
+    }
+
+    gst_sample_unref(sample);
 }
+
+
 
 const char* GstVideoReceiver::_kFileMux[FILE_FORMAT_MAX - FILE_FORMAT_MIN] = {
     "matroskamux",
@@ -945,8 +997,6 @@ GstVideoReceiver::_makeDecoder(GstCaps* caps, GstElement* videoSink)
     Q_UNUSED(caps)
     Q_UNUSED(videoSink)
     GstElement* decoder = nullptr;
-
-
 
     // DEĞİŞTİRDİM
     /*
