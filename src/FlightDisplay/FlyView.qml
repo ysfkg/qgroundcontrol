@@ -82,6 +82,7 @@ Item {
     FlyViewToolBar {
         id:         toolbar
         visible:    !QGroundControl.videoManager.fullScreen
+        z:                      QGroundControl.zOrderWidgets + 1
     }
 
     Item {
