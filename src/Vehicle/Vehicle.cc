@@ -1546,7 +1546,7 @@ void Vehicle::_handleRCChannels(mavlink_message_t& message)
         }
         //qDebug() << "pitch Kanal Yeni Değer:" << anglePitch;
         // "Pitch" ekseni için komut oluşturuluyor.
-        double speed = 1 + (std::abs(channel16Yaw - 1500) / 33.5);
+        double speed = 1 + (std::abs(channel16Pitch - 1500) / 33.5);
         QString command = buildAngleCommand("pitch", anglePitch, speed);
         if (!command.isEmpty()) {
             //qDebug() << "pitch Kanal Yeni Değer:" << anglePitch;
