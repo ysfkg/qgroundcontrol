@@ -21,6 +21,10 @@
 #include <QtCore/QUrl>
 #include <QtCore/QDateTime>
 
+#include <gst/app/gstappsink.h>
+#include <QImage>
+#include <QFile>
+
 QGC_LOGGING_CATEGORY(VideoReceiverLog, "VideoReceiverLog")
 
 //-----------------------------------------------------------------------------
@@ -132,12 +136,27 @@ GstVideoReceiver::start(const QString& uri, unsigned timeout, int buffer)
             break;
         }
 
+           // DEĞİŞTİRDİM
+        g_object_set(decoderQueue,
+                     "leaky", 2,                        // downstream
+                     "max-size-buffers", 1,
+                     "max-size-bytes", 0,              // Sınırsız değil → sıfır, buffer boyutu üzerinden sınır koymaz
+                     "max-size-time", (guint64)0,      // Zaman bazlı gecikme yok
+                     NULL);
+
+        g_object_set(recorderQueue,
+                     "leaky", 2,
+                     "max-size-buffers", 1,
+                     "max-size-bytes", 0,
+                     "max-size-time", (guint64)0,
+                     NULL);
+
         if((_decoderValve = gst_element_factory_make("valve", nullptr)) == nullptr)  {
             qCCritical(VideoReceiverLog) << "gst_element_factory_make('valve') failed";
             break;
         }
 
-        g_object_set(_decoderValve, "drop", TRUE, nullptr);
+        g_object_set(_decoderValve, "drop", FALSE, nullptr);    // DEĞİŞTİRDİM
 
         if((recorderQueue = gst_element_factory_make("queue", nullptr)) == nullptr)  {
             qCCritical(VideoReceiverLog) << "gst_element_factory_make('queue') failed";
@@ -149,7 +168,7 @@ GstVideoReceiver::start(const QString& uri, unsigned timeout, int buffer)
             break;
         }
 
-        g_object_set(_recorderValve, "drop", TRUE, nullptr);
+        g_object_set(_recorderValve, "drop", FALSE, nullptr);   // DEĞİŞTİRDİM
 
         if ((_pipeline = gst_pipeline_new("receiver")) == nullptr) {
             qCCritical(VideoReceiverLog) << "gst_pipeline_new() failed";
@@ -432,6 +451,9 @@ GstVideoReceiver::startDecoding(void* sink)
     _videoSink = videoSink;
     gst_object_ref(_videoSink);
 
+    g_object_set(_videoSink, "enable-last-sample", TRUE, NULL);
+
+
     _removingDecoder = false;
 
     if (!_streaming) {
@@ -612,8 +634,9 @@ GstVideoReceiver::stopRecording(void)
     });
 }
 
-void
-GstVideoReceiver::takeScreenshot(const QString& imageFile)
+
+
+void GstVideoReceiver::takeScreenshot(const QString& imageFile)
 {
     if (_needDispatch()) {
         QString cachedImageFile = imageFile;
@@ -623,8 +646,56 @@ GstVideoReceiver::takeScreenshot(const QString& imageFile)
         return;
     }
 
+<<<<<<< HEAD
 
+=======
+    if (!_videoSink) {
+        qWarning() << "No video sink available";
+        return;
+    }
+
+            // qgcvideosinkbin içindeki qmlglsink üzerinden sample al
+    GstSample* sample = nullptr;
+    g_object_get(_videoSink, "last-sample", &sample, NULL);
+
+    if (!sample) {
+        qWarning() << "No last-sample available from sink";
+        return;
+    }
+
+    GstBuffer* buffer = gst_sample_get_buffer(sample);
+    GstCaps* caps = gst_sample_get_caps(sample);
+    GstStructure* s = gst_caps_get_structure(caps, 0);
+
+    int width, height;
+    gst_structure_get_int(s, "width", &width);
+    gst_structure_get_int(s, "height", &height);
+
+    GstMapInfo map;
+    if (gst_buffer_map(buffer, &map, GST_MAP_READ)) {
+        const gchar* pixFormat = gst_structure_get_string(s, "format");
+
+        if (pixFormat && strcmp(pixFormat, "GRAY8") == 0) {
+            QImage image((uchar*)map.data, width, height, QImage::Format_Grayscale8);
+            image.save(imageFile);
+            qDebug() << "Saved grayscale image to" << imageFile;
+        } else {
+            QImage image((uchar*)map.data, width, height, QImage::Format_RGB888);
+            image.save(imageFile);
+            qDebug() << "Saved RGB image to" << imageFile;
+        }
+
+        gst_buffer_unmap(buffer, &map);
+    }
+     else {
+        qWarning() << "Failed to map video buffer";
+    }
+
+    gst_sample_unref(sample);
+>>>>>>> origin/v1.0.1
 }
+
+
 
 const char* GstVideoReceiver::_kFileMux[FILE_FORMAT_MAX - FILE_FORMAT_MIN] = {
     "matroskamux",
@@ -721,14 +792,14 @@ GstVideoReceiver::_filterParserCaps(GstElement* bin, GstPad* pad, GstElement* el
     if(gst_structure_has_name(structure, "video/x-h265")){
         filter = gst_caps_from_string("video/x-h265");
         if (gst_caps_can_intersect(srcCaps, filter)) {
-            sinkCaps = gst_caps_from_string("video/x-h265,stream-format=hvc1");
+            sinkCaps = gst_caps_from_string("video/x-h265,stream-format=hvc1,alignment=au");
         }
         gst_caps_unref(filter);
         filter = nullptr;
     } else if(gst_structure_has_name(structure, "video/x-h264")){
         filter = gst_caps_from_string("video/x-h264");
         if (gst_caps_can_intersect(srcCaps, filter)) {
-            sinkCaps = gst_caps_from_string("video/x-h264,stream-format=avc");
+            sinkCaps = gst_caps_from_string("video/x-h264,stream-format=avc,alignment=au");
         }
         gst_caps_unref(filter);
         filter = nullptr;
@@ -776,6 +847,7 @@ GstVideoReceiver::_makeSource(const QString& uri)
             }
         } else if (isRtsp) {
             if ((source = gst_element_factory_make("rtspsrc", "source")) != nullptr) {
+<<<<<<< HEAD
                 g_object_set(static_cast<gpointer>(source), "location", qPrintable(uri),
                              "latency", 0,           // Düşük gecikme
                              "buffer-mode", 0,       // None
@@ -785,6 +857,18 @@ GstVideoReceiver::_makeSource(const QString& uri)
                              "do-retransmission", TRUE,  // Paket kaybında yeniden istek
                              "ntp-sync", FALSE,                  // EKLENMELİ
                              "drop-on-latency", TRUE,
+=======
+                //g_object_set(static_cast<gpointer>(source), "location", qPrintable(uri), "latency", 10, "udp-reconnect", 1, "timeout", _udpReconnect_us, NULL);  // DeĞİŞTİRDİM
+                g_object_set(static_cast<gpointer>(source),
+                             "location", qPrintable(uri),
+                             "latency", 10,
+                             "udp-reconnect", 1,
+                             "timeout", _udpReconnect_us,
+                             "drop-on-latency", TRUE,
+                             "ntp-sync", FALSE,
+                             "do-retransmission", FALSE,
+                             "buffer-mode", 0,       // DEĞİŞTİRDİM 4 DENE BİRDE
+>>>>>>> origin/v1.0.1
                              NULL);
             }
         } else if(isUdp264 || isUdp265 || isUdpMPEGTS) {
@@ -858,16 +942,28 @@ GstVideoReceiver::_makeSource(const QString& uri)
         gst_element_foreach_src_pad(source, _padProbe, &probeRes);
 
         if (probeRes & 1) {
-            if (probeRes & 2 && _buffer >= 0) {
+            if (probeRes & 2 && -1 >= 0) {
                 if ((buffer = gst_element_factory_make("rtpjitterbuffer", nullptr)) == nullptr) {
                     qCCritical(VideoReceiverLog) << "gst_element_factory_make('rtpjitterbuffer') failed";
                     break;
                 }
+<<<<<<< HEAD
                 g_object_set(buffer,
                              "latency", 0,
                              "do-lost", TRUE,
                              "drop-on-latency", TRUE,
                              NULL);
+=======
+
+                g_object_set(buffer,
+                             "latency", 0,   // veya 5
+                             "do-lost", TRUE,
+                             "drop-on-latency", TRUE,
+                             "mode", 0,  // 0=slave to pipeline clock (best for low-latency)
+                             NULL);
+
+
+>>>>>>> origin/v1.0.1
                 gst_bin_add(GST_BIN(bin), buffer);
 
                 if (!gst_element_link_many(source, buffer, parser, nullptr)) {
@@ -926,6 +1022,8 @@ GstVideoReceiver::_makeDecoder(GstCaps* caps, GstElement* videoSink)
     Q_UNUSED(videoSink)
     GstElement* decoder = nullptr;
 
+    // DEĞİŞTİRDİM
+    /*
     do {
         // Determine if we have H.265 video
         bool isH265 = false;
@@ -975,7 +1073,33 @@ GstVideoReceiver::_makeDecoder(GstCaps* caps, GstElement* videoSink)
                 break;
             }
         }
-    } while(0);
+    } while(0);*/
+
+
+    const char* hwDecoders[] = {
+        "amcviddec-264",
+        "omxqcomvideodecoderavc",
+        "omxgoogleh264decoder"
+    };
+
+
+    for (auto name : hwDecoders) {
+        decoder = gst_element_factory_make(name, "hwdecoder");
+        if (decoder) {
+            qDebug() << "Using hardware decoder:" << name;
+            break;
+        }
+    }
+
+    if (!decoder) {
+        decoder = gst_element_factory_make("avdec_h264", nullptr); // fallback
+        qWarning() << "Using SOFTWARE decoder (avdec_h264)";
+    }
+
+    if (decoder && g_object_class_find_property(G_OBJECT_GET_CLASS(decoder), "low-latency")) {
+        g_object_set(decoder, "low-latency", TRUE, NULL);
+        qDebug() << "Enabled low-latency mode on decoder";
+    }
 
     return decoder;
 }
@@ -1024,6 +1148,11 @@ GstVideoReceiver::_makeFileSink(const QString& videoFile, FILE_FORMAT format)
         } else {
             qCCritical(VideoReceiverLog) << "Unsupported file format";
             break;
+        }
+        if (format == FILE_FORMAT_MP4) {
+            g_object_set(mux, "streamable", TRUE, NULL);
+        } else if (videoFile.endsWith(".mp4")) {
+            g_object_set(mux, "streamable", TRUE, NULL);
         }
 
                 // MP4 ve MKV için H.265 özel ayarları
@@ -1276,7 +1405,11 @@ GstVideoReceiver::_addVideoSink(GstPad* pad)
 
     gst_element_sync_state_with_parent(_videoSink);
 
-    g_object_set(_videoSink, "sync", FALSE, NULL);
+
+
+    //g_object_set(_videoSink, "sync", _buffer >= 0, NULL);    // DEĞİŞTİRDİM
+    g_object_set(G_OBJECT(_videoSink), "sync", FALSE, NULL);
+
 
     GST_DEBUG_BIN_TO_DOT_FILE(GST_BIN(_pipeline), GST_DEBUG_GRAPH_SHOW_ALL, "pipeline-with-videosink");
 
