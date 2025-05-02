@@ -21,5 +21,5 @@
 + Video Kaynağı 2 olacak şekilde güncellendi  
  
 *************************** v1.2 ***********************  Üsttekiler ile birleştirildi  
-+ Lowvoltaj değeri, yani failsafe voltaj değeri eve olan mesafe ile güncellencek şekilde algoritma eklendi   
++ Kalan pil yüzdesi için algoritma eklendi   
 + Arayüzde düzeltmeler yapıldı
