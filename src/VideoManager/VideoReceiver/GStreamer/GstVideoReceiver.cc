@@ -21,9 +21,7 @@
 #include <QtCore/QUrl>
 #include <QtCore/QDateTime>
 
-#include <gst/app/gstappsink.h>
 #include <QImage>
-#include <QFile>
 
 QGC_LOGGING_CATEGORY(VideoReceiverLog, "VideoReceiverLog")
 
@@ -39,26 +37,26 @@ QGC_LOGGING_CATEGORY(VideoReceiverLog, "VideoReceiverLog")
 
 GstVideoReceiver::GstVideoReceiver(QObject* parent)
     : VideoReceiver(parent)
-    , _streaming(false)
-    , _decoding(false)
-    , _recording(false)
-    , _removingDecoder(false)
-    , _removingRecorder(false)
-    , _source(nullptr)
-    , _tee(nullptr)
-    , _decoderValve(nullptr)
-    , _recorderValve(nullptr)
-    , _decoder(nullptr)
-    , _videoSink(nullptr)
-    , _fileSink(nullptr)
-    , _pipeline(nullptr)
-    , _lastSourceFrameTime(0)
-    , _lastVideoFrameTime(0)
-    , _resetVideoSink(true)
-    , _videoSinkProbeId(0)
-    , _udpReconnect_us(5000000)
-    , _signalDepth(0)
-    , _endOfStream(false)
+      , _streaming(false)
+      , _decoding(false)
+      , _recording(false)
+      , _removingDecoder(false)
+      , _removingRecorder(false)
+      , _source(nullptr)
+      , _tee(nullptr)
+      , _decoderValve(nullptr)
+      , _recorderValve(nullptr)
+      , _decoder(nullptr)
+      , _videoSink(nullptr)
+      , _fileSink(nullptr)
+      , _pipeline(nullptr)
+      , _lastSourceFrameTime(0)
+      , _lastVideoFrameTime(0)
+      , _resetVideoSink(true)
+      , _videoSinkProbeId(0)
+      , _udpReconnect_us(5000000)
+      , _signalDepth(0)
+      , _endOfStream(false)
 {
     _slotHandler.start();
     connect(&_watchdogTimer, &QTimer::timeout, this, &GstVideoReceiver::_watchdog);
@@ -136,27 +134,12 @@ GstVideoReceiver::start(const QString& uri, unsigned timeout, int buffer)
             break;
         }
 
-           // DEĞİŞTİRDİM
-        g_object_set(decoderQueue,
-                     "leaky", 2,                        // downstream
-                     "max-size-buffers", 1,
-                     "max-size-bytes", 0,              // Sınırsız değil → sıfır, buffer boyutu üzerinden sınır koymaz
-                     "max-size-time", (guint64)0,      // Zaman bazlı gecikme yok
-                     NULL);
-
-        g_object_set(recorderQueue,
-                     "leaky", 2,
-                     "max-size-buffers", 1,
-                     "max-size-bytes", 0,
-                     "max-size-time", (guint64)0,
-                     NULL);
-
         if((_decoderValve = gst_element_factory_make("valve", nullptr)) == nullptr)  {
             qCCritical(VideoReceiverLog) << "gst_element_factory_make('valve') failed";
             break;
         }
 
-        g_object_set(_decoderValve, "drop", FALSE, nullptr);    // DEĞİŞTİRDİM
+        g_object_set(_decoderValve, "drop", TRUE, nullptr);
 
         if((recorderQueue = gst_element_factory_make("queue", nullptr)) == nullptr)  {
             qCCritical(VideoReceiverLog) << "gst_element_factory_make('queue') failed";
@@ -168,7 +151,7 @@ GstVideoReceiver::start(const QString& uri, unsigned timeout, int buffer)
             break;
         }
 
-        g_object_set(_recorderValve, "drop", FALSE, nullptr);   // DEĞİŞTİRDİM
+        g_object_set(_recorderValve, "drop", TRUE, nullptr);
 
         if ((_pipeline = gst_pipeline_new("receiver")) == nullptr) {
             qCCritical(VideoReceiverLog) << "gst_pipeline_new() failed";
@@ -237,14 +220,14 @@ GstVideoReceiver::start(const QString& uri, unsigned timeout, int buffer)
     if (!running) {
         qCCritical(VideoReceiverLog) << "Failed";
 
-        // In newer versions, the pipeline will clean up all references that are added to it
+                // In newer versions, the pipeline will clean up all references that are added to it
         if (_pipeline != nullptr) {
             gst_element_set_state(_pipeline, GST_STATE_NULL);
             gst_object_unref(_pipeline);
             _pipeline = nullptr;
         }
 
-        // If we failed before adding items to the pipeline, then clean up
+                // If we failed before adding items to the pipeline, then clean up
         if (!pipelineUp) {
             if (_recorderValve != nullptr) {
                 gst_object_unref(_recorderValve);
@@ -355,9 +338,9 @@ GstVideoReceiver::stop(void)
 
         gst_element_set_state(_pipeline, GST_STATE_NULL);
 
-        // FIXME: check if branch is connected and remove all elements from branch
+                // FIXME: check if branch is connected and remove all elements from branch
         if (_fileSink != nullptr) {
-           _shutdownRecordingBranch();
+            _shutdownRecordingBranch();
         }
 
         if (_videoSink != nullptr) {
@@ -451,9 +434,6 @@ GstVideoReceiver::startDecoding(void* sink)
     _videoSink = videoSink;
     gst_object_ref(_videoSink);
 
-    g_object_set(_videoSink, "enable-last-sample", TRUE, NULL);
-
-
     _removingDecoder = false;
 
     if (!_streaming) {
@@ -492,7 +472,7 @@ GstVideoReceiver::stopDecoding(void)
 
     qCDebug(VideoReceiverLog) << "Stopping decoding" << _uri;
 
-    // exit immediately if we are not decoding
+            // exit immediately if we are not decoding
     if (_pipeline == nullptr || !_decoding) {
         qCDebug(VideoReceiverLog) << "Not decoding!" << _uri;
         _dispatchSignal([this](){
@@ -507,8 +487,8 @@ GstVideoReceiver::stopDecoding(void)
 
     bool ret = _unlinkBranch(_decoderValve);
 
-    // FIXME: AV: it is much better to emit onStopDecodingComplete() after decoding is really stopped
-    // (which happens later due to async design) but as for now it is also not so bad...
+            // FIXME: AV: it is much better to emit onStopDecodingComplete() after decoding is really stopped
+            // (which happens later due to async design) but as for now it is also not so bad...
     _dispatchSignal([this, ret](){
         emit onStopDecodingComplete(ret ? STATUS_OK : STATUS_FAIL);
     });
@@ -571,9 +551,9 @@ GstVideoReceiver::startRecording(const QString& videoFile, FILE_FORMAT format)
 
     GST_DEBUG_BIN_TO_DOT_FILE(GST_BIN(_pipeline), GST_DEBUG_GRAPH_SHOW_ALL, "pipeline-with-filesink");
 
-    // Install a probe on the recording branch to drop buffers until we hit our first keyframe
-    // When we hit our first keyframe, we can offset the timestamps appropriately according to the first keyframe time
-    // This will ensure the first frame is a keyframe at t=0, and decoding can begin immediately on playback
+            // Install a probe on the recording branch to drop buffers until we hit our first keyframe
+            // When we hit our first keyframe, we can offset the timestamps appropriately according to the first keyframe time
+            // This will ensure the first frame is a keyframe at t=0, and decoding can begin immediately on playback
     GstPad* probepad;
 
     if ((probepad  = gst_element_get_static_pad(_recorderValve, "src")) == nullptr) {
@@ -611,7 +591,7 @@ GstVideoReceiver::stopRecording(void)
 
     qCDebug(VideoReceiverLog) << "Stopping recording" << _uri;
 
-    // exit immediately if we are not recording
+            // exit immediately if we are not recording
     if (_pipeline == nullptr || !_recording) {
         qCDebug(VideoReceiverLog) << "Not recording!" << _uri;
         _dispatchSignal([this](){
@@ -626,14 +606,12 @@ GstVideoReceiver::stopRecording(void)
 
     bool ret = _unlinkBranch(_recorderValve);
 
-    // FIXME: AV: it is much better to emit onStopRecordingComplete() after recording is really stopped
-    // (which happens later due to async design) but as for now it is also not so bad...
+            // FIXME: AV: it is much better to emit onStopRecordingComplete() after recording is really stopped
+            // (which happens later due to async design) but as for now it is also not so bad...
     _dispatchSignal([this, ret](){
         emit onStopRecordingComplete(ret ? STATUS_OK : STATUS_FAIL);
     });
 }
-
-
 
 void GstVideoReceiver::takeScreenshot(const QString& imageFile)
 {
@@ -683,14 +661,12 @@ void GstVideoReceiver::takeScreenshot(const QString& imageFile)
 
         gst_buffer_unmap(buffer, &map);
     }
-     else {
+    else {
         qWarning() << "Failed to map video buffer";
     }
 
     gst_sample_unref(sample);
 }
-
-
 
 const char* GstVideoReceiver::_kFileMux[FILE_FORMAT_MAX - FILE_FORMAT_MIN] = {
     "matroskamux",
@@ -787,14 +763,14 @@ GstVideoReceiver::_filterParserCaps(GstElement* bin, GstPad* pad, GstElement* el
     if(gst_structure_has_name(structure, "video/x-h265")){
         filter = gst_caps_from_string("video/x-h265");
         if (gst_caps_can_intersect(srcCaps, filter)) {
-            sinkCaps = gst_caps_from_string("video/x-h265,stream-format=hvc1,alignment=au");
+            sinkCaps = gst_caps_from_string("video/x-h265,stream-format=hvc1");
         }
         gst_caps_unref(filter);
         filter = nullptr;
     } else if(gst_structure_has_name(structure, "video/x-h264")){
         filter = gst_caps_from_string("video/x-h264");
         if (gst_caps_can_intersect(srcCaps, filter)) {
-            sinkCaps = gst_caps_from_string("video/x-h264,stream-format=avc,alignment=au");
+            sinkCaps = gst_caps_from_string("video/x-h264,stream-format=avc");
         }
         gst_caps_unref(filter);
         filter = nullptr;
@@ -842,17 +818,7 @@ GstVideoReceiver::_makeSource(const QString& uri)
             }
         } else if (isRtsp) {
             if ((source = gst_element_factory_make("rtspsrc", "source")) != nullptr) {
-                //g_object_set(static_cast<gpointer>(source), "location", qPrintable(uri), "latency", 10, "udp-reconnect", 1, "timeout", _udpReconnect_us, NULL);  // DeĞİŞTİRDİM
-                g_object_set(static_cast<gpointer>(source),
-                             "location", qPrintable(uri),
-                             "latency", 10,
-                             "udp-reconnect", 1,
-                             "timeout", _udpReconnect_us,
-                             "drop-on-latency", TRUE,
-                             "ntp-sync", FALSE,
-                             "do-retransmission", FALSE,
-                             "buffer-mode", 0,       // DEĞİŞTİRDİM 4 DENE BİRDE
-                             NULL);
+                g_object_set(static_cast<gpointer>(source), "location", qPrintable(uri), "latency", 17, "udp-reconnect", 1, "timeout", _udpReconnect_us, NULL);
             }
         } else if(isUdp264 || isUdp265 || isUdpMPEGTS) {
             if ((source = gst_element_factory_make("udpsrc", "source")) != nullptr) {
@@ -901,8 +867,8 @@ GstVideoReceiver::_makeSource(const QString& uri)
 
         gst_bin_add_many(GST_BIN(bin), source, parser, nullptr);
 
-        // FIXME: AV: Android does not determine MPEG2-TS via parsebin - have to explicitly state which demux to use
-        // FIXME: AV: tsdemux handling is a bit ugly - let's try to find elegant solution for that later
+                // FIXME: AV: Android does not determine MPEG2-TS via parsebin - have to explicitly state which demux to use
+                // FIXME: AV: tsdemux handling is a bit ugly - let's try to find elegant solution for that later
         if (isTcpMPEGTS || isUdpMPEGTS) {
             if ((tsdemux = gst_element_factory_make("tsdemux", nullptr)) == nullptr) {
                 qCCritical(VideoReceiverLog) << "gst_element_factory_make('tsdemux') failed";
@@ -925,19 +891,11 @@ GstVideoReceiver::_makeSource(const QString& uri)
         gst_element_foreach_src_pad(source, _padProbe, &probeRes);
 
         if (probeRes & 1) {
-            if (probeRes & 2 && -1 >= 0) {
+            if (probeRes & 2 && _buffer >= 0) {
                 if ((buffer = gst_element_factory_make("rtpjitterbuffer", nullptr)) == nullptr) {
                     qCCritical(VideoReceiverLog) << "gst_element_factory_make('rtpjitterbuffer') failed";
                     break;
                 }
-
-                g_object_set(buffer,
-                             "latency", 0,   // veya 5
-                             "do-lost", TRUE,
-                             "drop-on-latency", TRUE,
-                             "mode", 0,  // 0=slave to pipeline clock (best for low-latency)
-                             NULL);
-
 
                 gst_bin_add(GST_BIN(bin), buffer);
 
@@ -998,40 +956,12 @@ GstVideoReceiver::_makeDecoder(GstCaps* caps, GstElement* videoSink)
     Q_UNUSED(videoSink)
     GstElement* decoder = nullptr;
 
-    // DEĞİŞTİRDİM
-    /*
     do {
         if ((decoder = gst_element_factory_make("decodebin3", nullptr)) == nullptr) {
             qCCritical(VideoReceiverLog) << "gst_element_factory_make('decodebin3') failed";
             break;
         }
-    } while(0);*/
-
-
-    const char* hwDecoders[] = {
-        "amcviddec-264",
-        "omxqcomvideodecoderavc",
-        "omxgoogleh264decoder"
-    };
-
-
-    for (auto name : hwDecoders) {
-        decoder = gst_element_factory_make(name, "hwdecoder");
-        if (decoder) {
-            qDebug() << "Using hardware decoder:" << name;
-            break;
-        }
-    }
-
-    if (!decoder) {
-        decoder = gst_element_factory_make("avdec_h264", nullptr); // fallback
-        qWarning() << "Using SOFTWARE decoder (avdec_h264)";
-    }
-
-    if (decoder && g_object_class_find_property(G_OBJECT_GET_CLASS(decoder), "low-latency")) {
-        g_object_set(decoder, "low-latency", TRUE, NULL);
-        qDebug() << "Enabled low-latency mode on decoder";
-    }
+    } while(0);
 
     return decoder;
 }
@@ -1055,11 +985,6 @@ GstVideoReceiver::_makeFileSink(const QString& videoFile, FILE_FORMAT format)
             qCCritical(VideoReceiverLog) << "gst_element_factory_make('" << _kFileMux[format - FILE_FORMAT_MIN] << "') failed";
             break;
         }
-        if (format == FILE_FORMAT_MP4) {
-            g_object_set(mux, "streamable", TRUE, NULL);
-        } else if (videoFile.endsWith(".mp4")) {
-            g_object_set(mux, "streamable", TRUE, NULL);
-        }
 
         if ((sink = gst_element_factory_make("filesink", nullptr)) == nullptr) {
             qCCritical(VideoReceiverLog) << "gst_element_factory_make('filesink') failed";
@@ -1080,7 +1005,7 @@ GstVideoReceiver::_makeFileSink(const QString& videoFile, FILE_FORMAT format)
             break;
         }
 
-        // FIXME: AV: pad handling is potentially leaking (and other similar places too!)
+                // FIXME: AV: pad handling is potentially leaking (and other similar places too!)
         GstPad* pad;
 
         if ((pad = gst_element_request_pad(mux, padTemplate, nullptr, nullptr)) == nullptr) {
@@ -1269,8 +1194,7 @@ GstVideoReceiver::_addVideoSink(GstPad* pad)
 
     gst_element_sync_state_with_parent(_videoSink);
 
-    //g_object_set(_videoSink, "sync", _buffer >= 0, NULL);    // DEĞİŞTİRDİM
-    g_object_set(G_OBJECT(_videoSink), "sync", FALSE, NULL);
+    g_object_set(_videoSink, "sync", _buffer >= 0, NULL);
 
     GST_DEBUG_BIN_TO_DOT_FILE(GST_BIN(_pipeline), GST_DEBUG_GRAPH_SHOW_ALL, "pipeline-with-videosink");
 
@@ -1358,7 +1282,7 @@ GstVideoReceiver::_unlinkBranch(GstElement* from)
     gst_object_unref(src);
     src = nullptr;
 
-    // Send EOS at the beginning of the branch
+            // Send EOS at the beginning of the branch
     const gboolean ret = gst_pad_send_event(sink, gst_event_new_eos());
 
     gst_object_unref(sink);
@@ -1471,66 +1395,66 @@ GstVideoReceiver::_onBusMessage(GstBus* bus, GstMessage* msg, gpointer data)
     GstVideoReceiver* pThis = (GstVideoReceiver*)data;
 
     switch (GST_MESSAGE_TYPE(msg)) {
-    case GST_MESSAGE_ERROR:
-        do {
-            gchar* debug;
-            GError* error;
+        case GST_MESSAGE_ERROR:
+            do {
+                gchar* debug;
+                GError* error;
 
-            gst_message_parse_error(msg, &error, &debug);
+                gst_message_parse_error(msg, &error, &debug);
 
-            if (debug != nullptr) {
-                qCDebug(VideoReceiverLog) << "GStreamer debug: " << debug;
-                g_free(debug);
-                debug = nullptr;
-            }
+                if (debug != nullptr) {
+                    qCDebug(VideoReceiverLog) << "GStreamer debug: " << debug;
+                    g_free(debug);
+                    debug = nullptr;
+                }
 
-            if (error != nullptr) {
-                qCCritical(VideoReceiverLog) << "GStreamer error:" << error->message;
-                g_error_free(error);
-                error = nullptr;
-            }
+                if (error != nullptr) {
+                    qCCritical(VideoReceiverLog) << "GStreamer error:" << error->message;
+                    g_error_free(error);
+                    error = nullptr;
+                }
 
-            pThis->_slotHandler.dispatch([pThis](){
-                qCDebug(VideoReceiverLog) << "Stopping because of error";
-                pThis->stop();
-            });
-        } while(0);
-        break;
-    case GST_MESSAGE_EOS:
-        pThis->_slotHandler.dispatch([pThis](){
-            qCDebug(VideoReceiverLog) << "Received EOS";
-            pThis->_handleEOS();
-        });
-        break;
-    case GST_MESSAGE_ELEMENT:
-        do {
-            const GstStructure* s = gst_message_get_structure (msg);
-
-            if (!gst_structure_has_name (s, "GstBinForwarded")) {
-                break;
-            }
-
-            GstMessage* forward_msg = nullptr;
-
-            gst_structure_get(s, "message", GST_TYPE_MESSAGE, &forward_msg, NULL);
-
-            if (forward_msg == nullptr) {
-                break;
-            }
-
-            if (GST_MESSAGE_TYPE(forward_msg) == GST_MESSAGE_EOS) {
                 pThis->_slotHandler.dispatch([pThis](){
-                    qCDebug(VideoReceiverLog) << "Received branch EOS";
-                    pThis->_handleEOS();
+                    qCDebug(VideoReceiverLog) << "Stopping because of error";
+                    pThis->stop();
                 });
-            }
+            } while(0);
+            break;
+        case GST_MESSAGE_EOS:
+            pThis->_slotHandler.dispatch([pThis](){
+                qCDebug(VideoReceiverLog) << "Received EOS";
+                pThis->_handleEOS();
+            });
+            break;
+        case GST_MESSAGE_ELEMENT:
+            do {
+                const GstStructure* s = gst_message_get_structure (msg);
 
-            gst_message_unref(forward_msg);
-            forward_msg = nullptr;
-        } while(0);
-        break;
-    default:
-        break;
+                if (!gst_structure_has_name (s, "GstBinForwarded")) {
+                    break;
+                }
+
+                GstMessage* forward_msg = nullptr;
+
+                gst_structure_get(s, "message", GST_TYPE_MESSAGE, &forward_msg, NULL);
+
+                if (forward_msg == nullptr) {
+                    break;
+                }
+
+                if (GST_MESSAGE_TYPE(forward_msg) == GST_MESSAGE_EOS) {
+                    pThis->_slotHandler.dispatch([pThis](){
+                        qCDebug(VideoReceiverLog) << "Received branch EOS";
+                        pThis->_handleEOS();
+                    });
+                }
+
+                gst_message_unref(forward_msg);
+                forward_msg = nullptr;
+            } while(0);
+            break;
+        default:
+            break;
     }
 
     return TRUE;
@@ -1654,28 +1578,28 @@ GstVideoReceiver::_videoSinkProbe(GstPad* pad, GstPadProbeInfo* info, gpointer u
         if (pThis->_resetVideoSink) {
             pThis->_resetVideoSink = false;
 
-// FIXME: AV: this makes MPEG2-TS playing smooth but breaks RTSP
-//            gst_pad_send_event(pad, gst_event_new_flush_start());
-//            gst_pad_send_event(pad, gst_event_new_flush_stop(TRUE));
+            // FIXME: AV: this makes MPEG2-TS playing smooth but breaks RTSP
+            //            gst_pad_send_event(pad, gst_event_new_flush_start());
+            //            gst_pad_send_event(pad, gst_event_new_flush_stop(TRUE));
 
-//            GstBuffer* buf;
+            //            GstBuffer* buf;
 
-//            if ((buf = gst_pad_probe_info_get_buffer(info)) != nullptr) {
-//                GstSegment* seg;
+            //            if ((buf = gst_pad_probe_info_get_buffer(info)) != nullptr) {
+            //                GstSegment* seg;
 
-//                if ((seg = gst_segment_new()) != nullptr) {
-//                    gst_segment_init(seg, GST_FORMAT_TIME);
+            //                if ((seg = gst_segment_new()) != nullptr) {
+            //                    gst_segment_init(seg, GST_FORMAT_TIME);
 
-//                    seg->start = buf->pts;
+            //                    seg->start = buf->pts;
 
-//                    gst_pad_send_event(pad, gst_event_new_segment(seg));
+            //                    gst_pad_send_event(pad, gst_event_new_segment(seg));
 
-//                    gst_segment_free(seg);
-//                    seg = nullptr;
-//                }
+            //                    gst_segment_free(seg);
+            //                    seg = nullptr;
+            //                }
 
-//                gst_pad_set_offset(pad, -static_cast<gint64>(buf->pts));
-//            }
+            //                gst_pad_set_offset(pad, -static_cast<gint64>(buf->pts));
+            //            }
         }
 
         pThis->_noteVideoSinkFrame();
@@ -1716,7 +1640,7 @@ GstVideoReceiver::_keyframeWatch(GstPad* pad, GstPadProbeInfo* info, gpointer us
         return GST_PAD_PROBE_DROP;
     }
 
-    // set media file '0' offset to current timeline position - we don't want to touch other elements in the graph, except these which are downstream!
+            // set media file '0' offset to current timeline position - we don't want to touch other elements in the graph, except these which are downstream!
     gst_pad_set_offset(pad, -static_cast<gint64>(buf->pts));
 
     GstVideoReceiver* pThis = static_cast<GstVideoReceiver*>(user_data);

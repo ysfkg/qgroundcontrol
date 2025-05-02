@@ -16,3 +16,6 @@
 
 ************************** v1.0.1 **********************  Üsttekiler ile birleştirildi  
 +Kamera fotoğraf çekme komutları eklendi 
+  
+************************** v1.1 ***********************  
++ Video Kaynağı 2 olacak şekilde güncellendi  
