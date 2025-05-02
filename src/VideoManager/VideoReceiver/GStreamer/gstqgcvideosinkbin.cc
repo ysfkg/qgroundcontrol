@@ -114,6 +114,7 @@ gst_qgc_video_sink_bin_init(GstQgcVideoSinkBin *vsb)
     gboolean initialized = FALSE;
     gboolean ret = FALSE;
     GstElement *glcolorconvert = NULL;
+    GstElement *capsfilter = NULL;
     GstPad *pad = NULL;
     GstPad *ghostpad = NULL;
 
@@ -128,6 +129,12 @@ gst_qgc_video_sink_bin_init(GstQgcVideoSinkBin *vsb)
         GST_ERROR_OBJECT(vsb, "gst_element_factory_make('qml6glsink') failed");
         goto init_failed;
     }
+
+    if (vsb->qmlglsink) {
+        g_object_set(vsb->qmlglsink, "sync", FALSE, NULL);  //DEĞİŞTİRDİM
+    }
+
+
 
     glcolorconvert = gst_element_factory_make("glcolorconvert", NULL);
     if (!glcolorconvert) {
@@ -146,7 +153,9 @@ gst_qgc_video_sink_bin_init(GstQgcVideoSinkBin *vsb)
 
     gst_bin_add_many(GST_BIN(vsb), vsb->glupload, glcolorconvert, vsb->qmlglsink, NULL);
 
+
     ret = gst_element_link_many(vsb->glupload, glcolorconvert, vsb->qmlglsink, NULL);
+
     glcolorconvert = NULL;
     if (!ret) {
         GST_ERROR_OBJECT(vsb, "gst_element_link_many() failed");
