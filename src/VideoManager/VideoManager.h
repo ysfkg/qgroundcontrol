@@ -17,7 +17,7 @@
 
 Q_DECLARE_LOGGING_CATEGORY(VideoManagerLog)
 
-#define MAX_VIDEO_RECEIVERS 2
+#define MAX_VIDEO_RECEIVERS 1
 
 class FinishVideoInitialization;
 class SubtitleWriter;

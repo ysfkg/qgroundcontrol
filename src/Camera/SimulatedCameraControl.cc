@@ -172,7 +172,7 @@ bool SimulatedCameraControl::startVideoRecording()
 
     if (VideoManager::instance()->hasVideo1()) {
         VideoManager::instance()->startRecording1();
-        qWarning() << "startVideoRecording: Camera already recording";
+        qWarning() << "startVideoRecording: Camera 2 recordinggggg";
     }
 
     return false;

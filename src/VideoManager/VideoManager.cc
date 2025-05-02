@@ -91,7 +91,7 @@ void VideoManager::init()
     (void) connect(MultiVehicleManager::instance(), &MultiVehicleManager::activeVehicleChanged, this, &VideoManager::_setActiveVehicle);
 
     int index = 0;
-    const QStringList widgetTypes = {"videoContent", "thermalVideo"};
+    const QStringList widgetTypes = {"videoContent"};
     Q_ASSERT(widgetTypes.length() <= _videoReceiverData.length());
     for (VideoReceiverData &videoReceiver : _videoReceiverData) {
         videoReceiver.index = index++;
@@ -209,7 +209,7 @@ void VideoManager::init1()
     (void) connect(MultiVehicleManager::instance(), &MultiVehicleManager::activeVehicleChanged, this, &VideoManager::_setActiveVehicle);
 
     int index1 = 0;
-    const QStringList widgetTypes1 = {"videoContent1", "thermalVideo1"};
+    const QStringList widgetTypes1 = {"videoContent1"};
     Q_ASSERT(widgetTypes1.length() <= _videoReceiverData1.length());
     for (VideoReceiverData1 &videoReceiver : _videoReceiverData1) {
         videoReceiver.index = index1++;
