@@ -89,6 +89,8 @@ public:
     Q_INVOKABLE void stopVideo();
     Q_INVOKABLE void stopVideo1();
 
+
+
     void init();
     void init1();
     void cleanup();

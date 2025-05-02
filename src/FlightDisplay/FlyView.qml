@@ -89,6 +89,7 @@ Item {
     FlyViewToolBar {
         id:         toolbar
         visible:    !QGroundControl.videoManager.fullScreen
+        z:                      QGroundControl.zOrderWidgets + 1
     }
 
     Item {
@@ -146,7 +147,7 @@ Item {
             show:                   QGroundControl.videoManager.hasVideo && !QGroundControl.videoManager.fullScreen &&
                                         (videoControl.pipState.state === videoControl.pipState.pipState ||
                                          mapControl.pipState.state === mapControl.pipState.pipState)
-            z:                      QGroundControl.zOrderWidgets
+            z:                      QGroundControl.zOrderWidgets+1
 
             property real leftEdgeBottomInset: visible ? width + anchors.margins : 0
             property real bottomEdgeLeftInset: visible ? height + anchors.margins : 0
@@ -161,7 +162,7 @@ Item {
         PipView {
             id:                     _pipView2
             x: _pipView._isExpanded ? _pipView.x + _pipView.width + _toolsMargin
-                                        : ScreenTools.defaultFontPixelHeight * 2 + _pipView.x +_toolsMargin
+                                        : ScreenTools.defaultFontPixelHeight * 2.6 + _pipView.x +_toolsMargin
                 y: parent.height - height - _toolsMargin
             item1IsFullSettingsKey: "MainFlyWindowIsMap2"
             item1:                  mapControl2
@@ -169,7 +170,7 @@ Item {
             show:                   QGroundControl.videoManager.hasVideo && !QGroundControl.videoManager.fullScreen &&
                                         (videoControl2.pipState.state === videoControl2.pipState.pipState ||
                                          mapControl2.pipState.state === mapControl2.pipState.pipState)
-            z:                      QGroundControl.zOrderWidgets
+            z:                      QGroundControl.zOrderWidgets+1
 
             property real leftEdgeBottomInset: visible ? width + anchors.margins : 0
             property real bottomEdgeLeftInset: visible ? height + anchors.margins : 0

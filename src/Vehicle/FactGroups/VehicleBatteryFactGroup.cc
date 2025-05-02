@@ -164,7 +164,7 @@ void VehicleBatteryFactGroup::_handleBatteryStatus(Vehicle* vehicle, mavlink_mes
         double battmaxVoltage = vehicle->parameterManager()->getParameter(-1, "MOT_BAT_VOLT_MAX")->rawValue().toDouble();
         double initialRemainingBattCapacity;
         if (group->_isFirstTime) {
-            group->_initialRemainingBattCapacity = battCapacity * (totalVoltage - battLowVoltage) / (battmaxVoltage - battLowVoltage);
+            group->_initialRemainingBattCapacity = battCapacity * (totalVoltage - battLowVoltage) / (battmaxVoltage/1.003 - battLowVoltage);
             group->_isFirstTime = false;
         }
         double currentRemainingBattCapacity = group->_initialRemainingBattCapacity - Consumed_mAh;

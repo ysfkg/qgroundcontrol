@@ -213,8 +213,8 @@ Item {
         anchors.left:   parent.left
         anchors.bottom: parent.bottom
         visible:        _isExpanded && (ScreenTools.isMobile || pipMouseArea.containsMouse)
-        height:         ScreenTools.defaultFontPixelHeight * 2.5
-        width:          ScreenTools.defaultFontPixelHeight * 2.5
+        height:         ScreenTools.defaultFontPixelHeight * 2.7
+        width:          ScreenTools.defaultFontPixelHeight * 2.7
         sourceSize.height:  height
         MouseArea {
             anchors.fill:   parent
@@ -226,8 +226,8 @@ Item {
         id:                     showPip
         anchors.left :          parent.left
         anchors.bottom:         parent.bottom
-        height:                 ScreenTools.defaultFontPixelHeight * 2
-        width:                  ScreenTools.defaultFontPixelHeight * 2
+        height:                 ScreenTools.defaultFontPixelHeight * 2.6
+        width:                  ScreenTools.defaultFontPixelHeight * 2.6
         radius:                 ScreenTools.defaultFontPixelHeight / 3
         visible:                !_isExpanded
         color:                  _fullItem.pipState.isDark ? Qt.rgba(0,0,0,0.75) : Qt.rgba(0,0,0,0.5)
