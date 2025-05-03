@@ -88,7 +88,7 @@ Item {
 
     FlyViewToolBar {
         id:         toolbar
-        visible:    !QGroundControl.videoManager.fullScreen
+        visible:    !QGroundControl.videoManager.fullScreen && !QGroundControl.videoManager.fullScreen1
         z:                      QGroundControl.zOrderWidgets + 1
     }
 
@@ -144,9 +144,7 @@ Item {
             item1IsFullSettingsKey: "MainFlyWindowIsMap"
             item1:                  mapControl
             item2:                  QGroundControl.videoManager.hasVideo ? videoControl : null
-            show:                   QGroundControl.videoManager.hasVideo && !QGroundControl.videoManager.fullScreen &&
-                                        (videoControl.pipState.state === videoControl.pipState.pipState ||
-                                         mapControl.pipState.state === mapControl.pipState.pipState)
+            show:                   QGroundControl.videoManager.hasVideo && !QGroundControl.videoManager.fullScreen && !QGroundControl.videoManager.fullScreen1
             z:                      QGroundControl.zOrderWidgets+1
 
             property real leftEdgeBottomInset: visible ? width + anchors.margins : 0
@@ -167,14 +165,12 @@ Item {
             item1IsFullSettingsKey: "MainFlyWindowIsMap2"
             item1:                  mapControl2
             item2:                  QGroundControl.videoManager.hasVideo ? videoControl2 : null
-            show:                   QGroundControl.videoManager.hasVideo && !QGroundControl.videoManager.fullScreen &&
-                                        (videoControl2.pipState.state === videoControl2.pipState.pipState ||
-                                         mapControl2.pipState.state === mapControl2.pipState.pipState)
+            show:                   QGroundControl.videoManager.hasVideo && !QGroundControl.videoManager.fullScreen && !QGroundControl.videoManager.fullScreen1
             z:                      QGroundControl.zOrderWidgets+1
+
 
             property real leftEdgeBottomInset: visible ? width + anchors.margins : 0
             property real bottomEdgeLeftInset: visible ? height + anchors.margins : 0
-            visible: QGroundControl.videoManager.hasVideo1
             onPipClicked: {
                     if(_mainWindowIsVideo) {
                     _pipView._swapPip()
@@ -192,7 +188,7 @@ Item {
             z:                      _fullItemZorder + 2 // we need to add one extra layer for map 3d viewer (normally was 1)
             parentToolInsets:       _toolInsets
             mapControl:             _mapControl
-            visible:                !QGroundControl.videoManager.fullScreen
+            visible:                !QGroundControl.videoManager.fullScreen && !QGroundControl.videoManager.fullScreen1
             utmspActTrigger:        utmspSendActTrigger
             isViewer3DOpen:         viewer3DWindow.isOpen
         }
@@ -205,7 +201,7 @@ Item {
             z:                  _fullItemZorder + 2
             parentToolInsets:   widgetLayer.totalToolInsets
             mapControl:         _mapControl
-            visible:            !QGroundControl.videoManager.fullScreen
+            visible:            !QGroundControl.videoManager.fullScreen && !QGroundControl.videoManager.fullScreen1
         }
 
 
