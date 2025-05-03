@@ -148,7 +148,7 @@ QGCApplication::QGCApplication(int &argc, char *argv[], bool unitTesting)
         applicationName = QGC_APP_NAME;
 #endif
     }
-    applicationName = "Y&O Control Station";
+    applicationName = "Ground Station";
     setApplicationName(applicationName);
     setOrganizationName(QGC_ORG_NAME);
     setOrganizationDomain(QGC_ORG_DOMAIN);
