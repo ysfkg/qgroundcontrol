@@ -136,20 +136,15 @@ GstVideoReceiver::start(const QString& uri, unsigned timeout, int buffer)
             break;
         }
 
-           // DEĞİŞTİRDİM
+                // DEĞİŞTİRDİM
         g_object_set(decoderQueue,
                      "leaky", 2,                        // downstream
-                     "max-size-buffers", 1,
-                     "max-size-bytes", 0,              // Sınırsız değil → sıfır, buffer boyutu üzerinden sınır koymaz
-                     "max-size-time", (guint64)0,      // Zaman bazlı gecikme yok
-                     NULL);
-
-        g_object_set(recorderQueue,
-                     "leaky", 2,
                      "max-size-buffers", 1,
                      "max-size-bytes", 0,
                      "max-size-time", (guint64)0,
                      NULL);
+
+
 
         if((_decoderValve = gst_element_factory_make("valve", nullptr)) == nullptr)  {
             qCCritical(VideoReceiverLog) << "gst_element_factory_make('valve') failed";
@@ -163,12 +158,21 @@ GstVideoReceiver::start(const QString& uri, unsigned timeout, int buffer)
             break;
         }
 
+        g_object_set(recorderQueue,
+                     "leaky", 2,
+                     "max-size-buffers", 1,
+                     "max-size-bytes", 0,
+                     "max-size-time", (guint64)0,
+                     NULL);
+
+
         if((_recorderValve = gst_element_factory_make("valve", nullptr)) == nullptr)  {
             qCCritical(VideoReceiverLog) << "gst_element_factory_make('valve') failed";
             break;
         }
 
         g_object_set(_recorderValve, "drop", FALSE, nullptr);   // DEĞİŞTİRDİM
+
 
         if ((_pipeline = gst_pipeline_new("receiver")) == nullptr) {
             qCCritical(VideoReceiverLog) << "gst_pipeline_new() failed";
@@ -558,6 +562,22 @@ GstVideoReceiver::startRecording(const QString& videoFile, FILE_FORMAT format)
     gst_object_ref(_fileSink);
 
     gst_bin_add(GST_BIN(_pipeline), _fileSink);
+
+    // Mux'a giren stream tipini öğrenmek için recorderValve src pad caps'i logla
+    GstPad* valveSrcPad = gst_element_get_static_pad(_recorderValve, "src");
+    if (valveSrcPad) {
+        GstCaps* valveCaps = gst_pad_get_current_caps(valveSrcPad);
+        if (valveCaps) {
+            gchar* capsStr = gst_caps_to_string(valveCaps);
+            qCCritical(VideoReceiverLog) << "[DEBUG] _recorderValve src caps into mux:" << capsStr;
+            g_free(capsStr);
+            gst_caps_unref(valveCaps);
+        } else {
+            qCCritical(VideoReceiverLog) << "[DEBUG] _recorderValve src caps into mux: NULL";
+        }
+        gst_object_unref(valveSrcPad);
+    }
+
 
     if (!gst_element_link(_recorderValve, _fileSink)) {
         qCCritical(VideoReceiverLog) << "Failed to link valve and file sink" << _uri;
@@ -1049,7 +1069,7 @@ GstVideoReceiver::_makeDecoder(GstCaps* caps, GstElement* videoSink)
             qCCritical(VideoReceiverLog) << "Hardware H.265 decoder not available, trying software decoder";
 
             if ((decoder = gst_element_factory_make("decodebin3", nullptr)) == nullptr) {
-            qCCritical(VideoReceiverLog) << "gst_element_factory_make('decodebin3') failed";
+                qCCritical(VideoReceiverLog) << "gst_element_factory_make('decodebin3') failed";
 
                 if ((decoder = gst_element_factory_make("avdec_h265", nullptr)) == nullptr) {
                     qCCritical(VideoReceiverLog) << "Software H.265 decoder not available, falling back to decodebin3";
@@ -1258,7 +1278,7 @@ GstVideoReceiver::_addDecoder(GstElement* src)
     gst_bin_add(GST_BIN(_pipeline), _decoder);
     gst_element_sync_state_with_parent(_decoder);
 
-    // h265parse yarat
+            // h265parse yarat
     GstElement* parser = gst_element_factory_make("h265parse", "h265parser");
     if (!parser) {
         qCCritical(VideoReceiverLog) << "Failed to create h265parse!";
@@ -1269,7 +1289,7 @@ GstVideoReceiver::_addDecoder(GstElement* src)
     gst_bin_add(GST_BIN(_pipeline), parser);
     gst_element_sync_state_with_parent(parser);
 
-    // src ➔ parser ➔ decoder bağla
+            // src ➔ parser ➔ decoder bağla
     if (!gst_element_link_many(src, parser, _decoder, nullptr)) {
         qCCritical(VideoReceiverLog) << "Unable to link valve ➔ h265parse ➔ decoder";
         gst_bin_remove(GST_BIN(_pipeline), parser);
@@ -1278,7 +1298,7 @@ GstVideoReceiver::_addDecoder(GstElement* src)
     }
 
 
-    // Decoder src pad caps'ini logla
+            // Decoder src pad caps'ini logla
     GstPad* decoderSrcPad = gst_element_get_static_pad(_decoder, "src");
     if (decoderSrcPad) {
         GstCaps* caps = gst_pad_get_current_caps(decoderSrcPad);
@@ -1443,6 +1463,16 @@ GstVideoReceiver::_unlinkBranch(GstElement* from)
         return false;
     }
 
+
+            // Send EOS at the beginning of the branch
+    const gboolean ret = gst_pad_send_event(sink, gst_event_new_eos());
+
+    if (!ret) {
+        qCCritical(VideoReceiverLog) << "Branch EOS was NOT sent";
+        // Yine de unlink deneyebilirsin ama dikkatli ol
+    }
+
+
     if (!gst_pad_unlink(src, sink)) {
         gst_object_unref(src);
         src = nullptr;
@@ -1455,8 +1485,6 @@ GstVideoReceiver::_unlinkBranch(GstElement* from)
     gst_object_unref(src);
     src = nullptr;
 
-            // Send EOS at the beginning of the branch
-    const gboolean ret = gst_pad_send_event(sink, gst_event_new_eos());
 
     gst_object_unref(sink);
     sink = nullptr;
@@ -1753,7 +1781,7 @@ GstVideoReceiver::_videoSinkProbe(GstPad* pad, GstPadProbeInfo* info, gpointer u
         if (pThis->_resetVideoSink) {
             pThis->_resetVideoSink = false;
 
-            // FIXME: AV: this makes MPEG2-TS playing smooth but breaks RTSP
+                    // FIXME: AV: this makes MPEG2-TS playing smooth but breaks RTSP
             gst_pad_send_event(pad, gst_event_new_flush_start());
             gst_pad_send_event(pad, gst_event_new_flush_stop(TRUE));
 
@@ -1764,24 +1792,24 @@ GstVideoReceiver::_videoSinkProbe(GstPad* pad, GstPadProbeInfo* info, gpointer u
             gst_pad_send_event(pad, gst_event_new_segment(seg));
             gst_segment_free(seg);
 
-            //            GstBuffer* buf;
+                    //            GstBuffer* buf;
 
-            //            if ((buf = gst_pad_probe_info_get_buffer(info)) != nullptr) {
-            //                GstSegment* seg;
+                    //            if ((buf = gst_pad_probe_info_get_buffer(info)) != nullptr) {
+                    //                GstSegment* seg;
 
-            //                if ((seg = gst_segment_new()) != nullptr) {
-            //                    gst_segment_init(seg, GST_FORMAT_TIME);
+                    //                if ((seg = gst_segment_new()) != nullptr) {
+                    //                    gst_segment_init(seg, GST_FORMAT_TIME);
 
-            //                    seg->start = buf->pts;
+                    //                    seg->start = buf->pts;
 
-            //                    gst_pad_send_event(pad, gst_event_new_segment(seg));
+                    //                    gst_pad_send_event(pad, gst_event_new_segment(seg));
 
-            //                    gst_segment_free(seg);
-            //                    seg = nullptr;
-            //                }
+                    //                    gst_segment_free(seg);
+                    //                    seg = nullptr;
+                    //                }
 
-            //                gst_pad_set_offset(pad, -static_cast<gint64>(buf->pts));
-            //            }
+                    //                gst_pad_set_offset(pad, -static_cast<gint64>(buf->pts));
+                    //            }
         }
 
         pThis->_noteVideoSinkFrame();
