@@ -167,14 +167,13 @@ Item {
             item1IsFullSettingsKey: "MainFlyWindowIsMap2"
             item1:                  mapControl2
             item2:                  QGroundControl.videoManager.hasVideo ? videoControl2 : null
-            show:                   QGroundControl.videoManager.hasVideo && !QGroundControl.videoManager.fullScreen &&
+            show:                   QGroundControl.videoManager.hasVideo1 && !QGroundControl.videoManager.fullScreen &&
                                         (videoControl2.pipState.state === videoControl2.pipState.pipState ||
                                          mapControl2.pipState.state === mapControl2.pipState.pipState)
             z:                      QGroundControl.zOrderWidgets+1
 
             property real leftEdgeBottomInset: visible ? width + anchors.margins : 0
             property real bottomEdgeLeftInset: visible ? height + anchors.margins : 0
-            visible: QGroundControl.videoManager.hasVideo1
             onPipClicked: {
                     if(_mainWindowIsVideo) {
                     _pipView._swapPip()
