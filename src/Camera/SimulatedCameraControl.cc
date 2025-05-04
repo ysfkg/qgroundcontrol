@@ -134,6 +134,7 @@ bool SimulatedCameraControl::takePhoto()
     if (photoCaptureMode() == PHOTO_CAPTURE_SINGLE) {
         _vehicle->triggerSimpleCamera();
         VideoManager::instance()->grabImage();
+
         if (VideoManager::instance()->hasVideo1()) {
             VideoManager::instance()->grabImage1();
         }
