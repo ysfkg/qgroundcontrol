@@ -16,10 +16,13 @@
 
 #include <QtQml/QQmlEngine>
 
+#include <QUdpSocket>
+#include <QHostAddress>
+
 //-----------------------------------------------------------------------------
 SimulatedCameraControl::SimulatedCameraControl(Vehicle* vehicle, QObject* parent)
     : MavlinkCameraControl  (parent)
-    , _vehicle              (vehicle)
+      , _vehicle              (vehicle)
 {
     QQmlEngine::setObjectOwnership(this, QQmlEngine::CppOwnership);
 
@@ -137,6 +140,18 @@ bool SimulatedCameraControl::takePhoto()
         if (VideoManager::instance()->hasVideo1()) {
             VideoManager::instance()->grabImage1();
         }
+
+                // UDP ile C12 kameraya fotoğraf çekme komutu gönder
+        static const QByteArray command = "#TPUD2wCAP013E";  // Komut sabit
+        static const QHostAddress ipAddress("192.168.144.108");
+        static const quint16 port = 5000;
+
+        QUdpSocket udpSocket;
+        qCDebug(CameraControlLog) << "Sending UDP photo command to C12:" << command;
+        if (udpSocket.writeDatagram(command, ipAddress, port) == -1) {
+            qCWarning(CameraControlLog) << "UDP send failed:" << udpSocket.errorString();
+        }
+
         _photoCaptureStatus = PHOTO_CAPTURE_IN_PROGRESS;
         emit photoCaptureStatusChanged();
         QTimer::singleShot(500, [this]() { _photoCaptureStatus = PHOTO_CAPTURE_IDLE; emit photoCaptureStatusChanged(); });
@@ -172,7 +187,17 @@ bool SimulatedCameraControl::startVideoRecording()
 
     if (VideoManager::instance()->hasVideo1()) {
         VideoManager::instance()->startRecording1();
-        qWarning() << "startVideoRecording: Camera 2 recordinggggg";
+        qWarning() << "startVideoRecording: Camera already recording";
+    }
+
+    static const QByteArray command = "#TPUD2wVID0F6";  // C12 video kayıt başlatma komutu
+    static const QHostAddress ipAddress("192.168.144.108");
+    static const quint16 port = 5000;
+
+    QUdpSocket udpSocket;
+    qCDebug(CameraControlLog) << "Sending UDP video start command to C12:" << command;
+    if (udpSocket.writeDatagram(command, ipAddress, port) == -1) {
+        qCWarning(CameraControlLog) << "UDP video start send failed:" << udpSocket.errorString();
     }
 
     return false;
@@ -187,9 +212,23 @@ bool SimulatedCameraControl::stopVideoRecording()
         return false;
     }
 
+    static const QByteArray command = "#TPUD2wVID1F7";  // C12 video kayıt durdurma komutu
+    static const QHostAddress ipAddress("192.168.144.108");
+    static const quint16 port = 5000;
+
+    QUdpSocket udpSocket;
+    qCDebug(CameraControlLog) << "Sending UDP video start command to C12:" << command;
+    if (udpSocket.writeDatagram(command, ipAddress, port) == -1) {
+        qCWarning(CameraControlLog) << "UDP video start send failed:" << udpSocket.errorString();
+    }
+
     _videoRecordTimeUpdateTimer.stop();
     VideoManager::instance()->stopRecording();
-    VideoManager::instance()->stopRecording1();
+
+    if (VideoManager::instance()->hasVideo1()) {
+        VideoManager::instance()->stopRecording1();
+    }
+
     return true;
 }
 
@@ -209,7 +248,7 @@ bool SimulatedCameraControl::capturesVideo()
 
 void SimulatedCameraControl::setPhotoLapse(double)
 {
-    // FIXME: NYI
+   // FIXME: NYI
 }
 
 bool SimulatedCameraControl::capturesPhotos()
@@ -224,7 +263,7 @@ bool SimulatedCameraControl::hasVideoStream()
 
 void SimulatedCameraControl::setPhotoLapseCount(int)
 {
-    // FIXME: NYI
+   // FIXME: NYI
 }
 
 void SimulatedCameraControl::setPhotoCaptureMode(MavlinkCameraControl::PhotoCaptureMode photoCaptureMode)

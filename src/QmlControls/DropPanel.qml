@@ -15,9 +15,6 @@ import QGroundControl
 import QGroundControl.ScreenTools
 import QGroundControl.Palette
 
-/// Drop panel that displays positioned next to the specified click position.
-/// By default the panel drops to the right of the click position. If there isn't
-/// enough room to the right then the panel will drop to the left.
 Popup {
     id:             _root
     padding:        _innerMargin
@@ -39,27 +36,27 @@ Popup {
     property real _arrowPointPositionY: height / 2
     property bool _dropRight:           true
 
-    onAboutToShow: {
-        // Panel defaults to dropping to the right of click position
-        _root.x = clickRect.x + clickRect.width
+    onVisibleChanged: {
+        if (visible) {
+            // X konumu: Tıklamanın sağına açılacak şekilde ayarla
+            _root.x = clickRect.x + clickRect.width
+            if (_root.x + _root.width > dropViewPort.x + dropViewPort.width) {
+                _dropRight = false
+                _root.x = clickRect.x - _root.width
+            }
 
-        // If there isn't room to the right then we switch to drop to the left
-        if (_root.x + _root.width > dropViewPort.x + dropViewPort.width) {
-            _dropRight = false
-            _root.x = clickRect.x - _root.width
+            // Y konumu: Dikey olarak ortala
+            _root.y = clickRect.y + (clickRect.height / 2)
+            _root.y -= _root.height / 2
+
+            // Görünüm sınırları içinde tut
+            let originRootY = _root.y
+            _root.y = Math.max(_root.y, dropViewPort.y)
+            _root.y = Math.min(_root.y, dropViewPort.y + dropViewPort.height - _root.height)
+
+            // Ok ucunu düzelt
+            _arrowPointPositionY += originRootY - _root.y
         }
-
-        // Default position of panel is vertically centered on click position
-        _root.y = clickRect.y + (clickRect.height / 2)
-        _root.y -= _root.height / 2
-
-        // Make sure panel is within viewport
-        let originRootY = _root.y
-        _root.y = Math.max(_root.y, dropViewPort.y)
-        _root.y = Math.min(_root.y, dropViewPort.y + dropViewPort.height - _root.height)
-
-        // Adjust arrow position back to point at click position
-        _arrowPointPositionY += originRootY - _root.y
     }
 
     background: Item {
@@ -74,13 +71,13 @@ Popup {
             color:  _qgcPal.window
         }
 
-        // Arrowhead
+        // Ok başı (arrowhead)
         Canvas {
             x:      _dropRight ? 0 : parent.width - _arrowPointWidth
             y:      _arrowPointPositionY - _arrowPointWidth
             width:  _arrowPointWidth
             height: _arrowPointWidth * 2
-            
+
             onPaint: {
                 var context = getContext("2d")
                 context.reset()

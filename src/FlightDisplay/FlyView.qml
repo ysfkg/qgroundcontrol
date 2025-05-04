@@ -165,7 +165,7 @@ Item {
             item1IsFullSettingsKey: "MainFlyWindowIsMap2"
             item1:                  mapControl2
             item2:                  QGroundControl.videoManager.hasVideo ? videoControl2 : null
-            show:                   QGroundControl.videoManager.hasVideo && !QGroundControl.videoManager.fullScreen && !QGroundControl.videoManager.fullScreen1
+            show:                   QGroundControl.videoManager.hasVideo1 && !QGroundControl.videoManager.fullScreen && !QGroundControl.videoManager.fullScreen1
             z:                      QGroundControl.zOrderWidgets+1
 
 

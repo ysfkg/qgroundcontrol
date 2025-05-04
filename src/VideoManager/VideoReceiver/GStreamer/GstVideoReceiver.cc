@@ -136,12 +136,18 @@ GstVideoReceiver::start(const QString& uri, unsigned timeout, int buffer)
             break;
         }
 
-                // DEĞİŞTİRDİM
-        g_object_set(decoderQueue,
+                // DEĞİŞTİRDİM2
+        /*g_object_set(decoderQueue,
                      "leaky", 2,                        // downstream
                      "max-size-buffers", 1,
                      "max-size-bytes", 0,
                      "max-size-time", (guint64)0,
+                     NULL);*/
+        g_object_set(decoderQueue,
+                     "leaky", 0,                        // downstream
+                     "max-size-buffers", 3,
+                     "max-size-bytes", 0,
+                     "max-size-time", (guint64)100000000,
                      NULL);
 
 
@@ -1086,10 +1092,24 @@ GstVideoReceiver::_makeDecoder(GstCaps* caps, GstElement* videoSink)
             qCCritical(VideoReceiverLog) << "Enabled low-latency mode on decoder";
         }
 
-                // Ek performans ayarları
-        if (decoder && g_object_class_find_property(G_OBJECT_GET_CLASS(decoder), "max-threads")) {
+                // DEĞİŞTİRDİM2
+
+        /*if (decoder && g_object_class_find_property(G_OBJECT_GET_CLASS(decoder), "max-threads")) {
             g_object_set(decoder, "max-threads", 4, NULL);  // Çoklu çekirdek kullanımı
             qCCritical(VideoReceiverLog) << "Set decoder to use multiple threads";
+        }*/
+        if (decoder) {
+            // Set common properties for improved decoding
+            if (g_object_class_find_property(G_OBJECT_GET_CLASS(decoder), "max-threads"))
+                g_object_set(decoder, "max-threads", 6, NULL);
+
+            // For hardware decoder
+            if (g_object_class_find_property(G_OBJECT_GET_CLASS(decoder), "async-handling"))
+                g_object_set(decoder, "async-handling", TRUE, NULL);
+
+            // For software decoder
+            if (g_object_class_find_property(G_OBJECT_GET_CLASS(decoder), "output-corrupt"))
+                g_object_set(decoder, "output-corrupt", FALSE, NULL);
         }
 
     } while(0);
@@ -1284,7 +1304,7 @@ GstVideoReceiver::_addDecoder(GstElement* src)
         qCCritical(VideoReceiverLog) << "Failed to create h265parse!";
         return false;
     }
-    g_object_set(parser, "stream-format", 0 /* byte-stream */, nullptr); // 0=byte-stream, 1=avc, 2=hvc1
+    g_object_set(parser, "stream-format", 0 /* byte-stream */, "config-interval", -1, nullptr); // 0=byte-stream, 1=avc, 2=hvc1
 
     gst_bin_add(GST_BIN(_pipeline), parser);
     gst_element_sync_state_with_parent(parser);
@@ -1368,7 +1388,31 @@ GstVideoReceiver::_addVideoSink(GstPad* pad)
     gst_object_ref(_videoSink);
     gst_bin_add(GST_BIN(_pipeline), _videoSink);
 
-            // Decoder -> VideoConvert -> VideoSink olarak bağlayın
+    // DEĞİŞTİRDİM2
+    // In _addVideoSink, modify your videoConvert setup
+    GstElement* smoothingQueue = gst_element_factory_make("queue", "smoothingQueue");
+    if (smoothingQueue) {
+        g_object_set(smoothingQueue,
+                     "leaky", 0,                   // Don't leak
+                     "max-size-buffers", 2,        // Hold 2 frames for smoothing
+                     "max-size-time", 33000000,    // ~33ms (1 frame at 30fps)
+                     NULL);
+
+        gst_bin_add(GST_BIN(_pipeline), smoothingQueue);
+        gst_element_sync_state_with_parent(smoothingQueue);
+
+        // Modify your linking to include this queue
+        if(!gst_element_link_many(_decoder, videoConvert, smoothingQueue, _videoSink, NULL)) {
+            gst_bin_remove(GST_BIN(_pipeline), _videoSink);
+            gst_bin_remove(GST_BIN(_pipeline), videoConvert);
+            qCCritical(VideoReceiverLog) << "Unable to link decoder->videoconvert->videosink";
+            if (caps != nullptr) {
+                gst_caps_unref(caps);
+            }
+            return false;
+        }
+    }
+       /*     // Decoder -> VideoConvert -> VideoSink olarak bağlayın
     if(!gst_element_link_many(_decoder, videoConvert, _videoSink, NULL)) {
         gst_bin_remove(GST_BIN(_pipeline), _videoSink);
         gst_bin_remove(GST_BIN(_pipeline), videoConvert);
@@ -1377,12 +1421,17 @@ GstVideoReceiver::_addVideoSink(GstPad* pad)
             gst_caps_unref(caps);
         }
         return false;
-    }
+    }*/
 
     gst_element_sync_state_with_parent(_videoSink);
 
-            // VideoSink'i senkronizasyonsuz yap (düşük gecikme için)
-    g_object_set(G_OBJECT(_videoSink), "sync", FALSE, NULL);
+            // DEĞİŞTİRDİM2
+    //g_object_set(G_OBJECT(_videoSink), "sync", FALSE, NULL);
+    g_object_set(G_OBJECT(_videoSink),
+                 "sync", FALSE,                  // Enable sync for smoother playback
+                 //"max-lateness", 50000000,      // 50ms max lateness
+                 "qos", TRUE,                   // Enable quality of service
+                 NULL);
 
             // Debug için pipeline'ı dökümle
     GST_DEBUG_BIN_TO_DOT_FILE(GST_BIN(_pipeline), GST_DEBUG_GRAPH_SHOW_ALL, "pipeline-with-videoconvert-videosink");
