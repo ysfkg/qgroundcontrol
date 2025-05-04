@@ -23,11 +23,12 @@ import QGroundControl.FactSystem
 import QGroundControl.FactControls
 
 Rectangle {
-    width:      mainLayout.width + (_margins * 2)
-    height:     mainLayout.height + (_margins * 2)
+    width:      mainLayout.width + (_margins )
+    height:     mainLayout.height + (_margins )
     color:      Qt.rgba(qgcPal.window.r, qgcPal.window.g, qgcPal.window.b, 0.5)
     radius:     _margins
     visible:    _camera.capturesVideo || _camera.capturesPhotos
+    scale:             0.88
 
     property real   _margins:                   ScreenTools.defaultFontPixelHeight / 2
     property real   _smallMargins:              ScreenTools.defaultFontPixelWidth / 2
@@ -47,10 +48,11 @@ Rectangle {
 
     RowLayout {
         id:                 mainLayout
-        anchors.margins:    _margins
+        anchors.margins:    _margins/2
         anchors.top:        parent.top
         anchors.left:       parent.left
         spacing:            _margins
+        scale:             0.95
 
         ColumnLayout {
             Layout.fillHeight:  true
@@ -76,7 +78,7 @@ Rectangle {
         }
 
         ColumnLayout {
-            spacing: _margins * 2
+            spacing: _margins /10
 
             ColumnLayout {
                 spacing: _margins
@@ -185,6 +187,7 @@ Rectangle {
                         onClicked:      toggleShooting()
 
                         function toggleShooting() {
+                            console.log("birinci")
                             if (_cameraInPhotoMode) {
 
                                 if (_camera.photoCaptureStatus === MavlinkCameraControl.PHOTO_CAPTURE_INTERVAL_IN_PROGRESS) {
@@ -209,6 +212,7 @@ Rectangle {
                     Layout.preferredWidth:  (_cameraInVideoMode ? videoRecordTime.width : photoCaptureCount.width) + (_smallMargins * 2)
                     Layout.preferredHeight: (_cameraInVideoMode ? videoRecordTime.height : photoCaptureCount.height)
                     radius:                 _margins / 2
+                    scale:                  0.8
 
                     // Video record time
                     QGCLabel {
@@ -257,7 +261,7 @@ Rectangle {
             ColumnLayout {
                 id:                 trackingControls
                 Layout.alignment:   Qt.AlignHCenter
-                spacing:            _margins
+                spacing:            _margins/2
                 visible:            _camera && _camera.hasTracking
 
                 Rectangle {

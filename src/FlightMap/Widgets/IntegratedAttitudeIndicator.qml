@@ -16,14 +16,13 @@ import QGroundControl.FlightDisplay
 import QGroundControl.FlightMap
 
 Item {
-    implicitWidth:  _totalRadius * 2
+    implicitWidth:  _totalRadius *2
     implicitHeight: implicitWidth
-
-    property real compassRadius:        ScreenTools.defaultFontPixelHeight * 6 / 2
+    property real compassRadius:        (ScreenTools.defaultFontPixelHeight * 6 / 20)
     property real attitudeAngleDegrees: 0
 
-    readonly property real attitudeSize:         ScreenTools.defaultFontPixelHeight * 0.75
-    readonly property real attitudeSpacing:      ScreenTools.defaultFontPixelHeight / 4
+    readonly property real attitudeSize:         (ScreenTools.defaultFontPixelHeight * 0.75) / 1.6
+    readonly property real attitudeSpacing:      (ScreenTools.defaultFontPixelHeight / 4) /1.5
 
     property real _totalRadius:             compassRadius + attitudeSpacing + attitudeSize
     property real _attitudeRadius:          (width / 2) - (attitudeSize / 2)

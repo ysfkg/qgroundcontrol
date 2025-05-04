@@ -18,8 +18,8 @@ import QGroundControl.Palette
 
 Item {
     id:             control
-    implicitWidth:  mainLayout.width + (_toolsMargin * 2)
-    implicitHeight: mainLayout.height + (_toolsMargin * 2)
+    implicitWidth:  mainLayout.width + (_toolsMargin * 2)/2
+    implicitHeight: mainLayout.height + (_toolsMargin * 2)/2
 
     property real extraWidth: 0 ///< Extra width to add to the background rectangle
 
@@ -61,6 +61,7 @@ Item {
             id:                     valueArea
             userSettingsGroup:      telemetryBarUserSettingsGroup
             defaultSettingsGroup:   telemetryBarDefaultSettingsGroup
+
         }
     }
 

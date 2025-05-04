@@ -264,10 +264,17 @@ Item {
                     }
 
                     LabelledLabel {
+                        label:      qsTr("Current")
+                        labelText:  object.current.valueString + " " + object.current.units
+                        visible:    batteryValuesAvailable.currentAvailable
+                    }
+
+                    LabelledLabel {
                         label:      qsTr("Temperature")
                         labelText:  object.temperature.valueString + " " + object.temperature.units
                         visible:    batteryValuesAvailable.temperatureAvailable
                     }
+
 
                     LabelledLabel {
                         label:      qsTr("Function")
