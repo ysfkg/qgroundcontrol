@@ -137,8 +137,12 @@ bool SimulatedCameraControl::takePhoto()
     if (photoCaptureMode() == PHOTO_CAPTURE_SINGLE) {
         _vehicle->triggerSimpleCamera();
         VideoManager::instance()->grabImage();
+
         if (VideoManager::instance()->hasVideo1()) {
-            VideoManager::instance()->grabImage1();
+            QTimer::singleShot(50, this, []() {
+                VideoManager::instance()->grabImage1();
+            });
+
         }
 
                 // UDP ile C12 kameraya fotoğraf çekme komutu gönder
