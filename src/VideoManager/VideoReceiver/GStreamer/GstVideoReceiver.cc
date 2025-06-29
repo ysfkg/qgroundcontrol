@@ -25,6 +25,9 @@
 #include <QImage>
 #include <QFile>
 
+#include <QMessageBox>
+
+
 QGC_LOGGING_CATEGORY(VideoReceiverLog, "VideoReceiverLog")
 
 //-----------------------------------------------------------------------------
@@ -81,6 +84,7 @@ GstVideoReceiver::start(const QString& uri, unsigned timeout, int buffer)
         });
         return;
     }
+
 
     if(_pipeline) {
         qCCritical(VideoReceiverLog) << "Already running!" << _uri;
@@ -569,7 +573,7 @@ GstVideoReceiver::startRecording(const QString& videoFile, FILE_FORMAT format)
 
     gst_bin_add(GST_BIN(_pipeline), _fileSink);
 
-    // Mux'a giren stream tipini öğrenmek için recorderValve src pad caps'i logla
+            // Mux'a giren stream tipini öğrenmek için recorderValve src pad caps'i logla
     GstPad* valveSrcPad = gst_element_get_static_pad(_recorderValve, "src");
     if (valveSrcPad) {
         GstCaps* valveCaps = gst_pad_get_current_caps(valveSrcPad);
@@ -1103,11 +1107,11 @@ GstVideoReceiver::_makeDecoder(GstCaps* caps, GstElement* videoSink)
             if (g_object_class_find_property(G_OBJECT_GET_CLASS(decoder), "max-threads"))
                 g_object_set(decoder, "max-threads", 6, NULL);
 
-            // For hardware decoder
+                    // For hardware decoder
             if (g_object_class_find_property(G_OBJECT_GET_CLASS(decoder), "async-handling"))
                 g_object_set(decoder, "async-handling", TRUE, NULL);
 
-            // For software decoder
+                    // For software decoder
             if (g_object_class_find_property(G_OBJECT_GET_CLASS(decoder), "output-corrupt"))
                 g_object_set(decoder, "output-corrupt", FALSE, NULL);
         }
@@ -1388,8 +1392,8 @@ GstVideoReceiver::_addVideoSink(GstPad* pad)
     gst_object_ref(_videoSink);
     gst_bin_add(GST_BIN(_pipeline), _videoSink);
 
-    // DEĞİŞTİRDİM2
-    // In _addVideoSink, modify your videoConvert setup
+            // DEĞİŞTİRDİM2
+            // In _addVideoSink, modify your videoConvert setup
     GstElement* smoothingQueue = gst_element_factory_make("queue", "smoothingQueue");
     if (smoothingQueue) {
         g_object_set(smoothingQueue,
@@ -1401,7 +1405,7 @@ GstVideoReceiver::_addVideoSink(GstPad* pad)
         gst_bin_add(GST_BIN(_pipeline), smoothingQueue);
         gst_element_sync_state_with_parent(smoothingQueue);
 
-        // Modify your linking to include this queue
+                // Modify your linking to include this queue
         if(!gst_element_link_many(_decoder, videoConvert, smoothingQueue, _videoSink, NULL)) {
             gst_bin_remove(GST_BIN(_pipeline), _videoSink);
             gst_bin_remove(GST_BIN(_pipeline), videoConvert);
@@ -1412,16 +1416,16 @@ GstVideoReceiver::_addVideoSink(GstPad* pad)
             return false;
         }
     }
-       /*     // Decoder -> VideoConvert -> VideoSink olarak bağlayın
-    if(!gst_element_link_many(_decoder, videoConvert, _videoSink, NULL)) {
-        gst_bin_remove(GST_BIN(_pipeline), _videoSink);
-        gst_bin_remove(GST_BIN(_pipeline), videoConvert);
-        qCCritical(VideoReceiverLog) << "Unable to link decoder->videoconvert->videosink";
-        if (caps != nullptr) {
-            gst_caps_unref(caps);
-        }
-        return false;
-    }*/
+    /*     // Decoder -> VideoConvert -> VideoSink olarak bağlayın
+ if(!gst_element_link_many(_decoder, videoConvert, _videoSink, NULL)) {
+     gst_bin_remove(GST_BIN(_pipeline), _videoSink);
+     gst_bin_remove(GST_BIN(_pipeline), videoConvert);
+     qCCritical(VideoReceiverLog) << "Unable to link decoder->videoconvert->videosink";
+     if (caps != nullptr) {
+         gst_caps_unref(caps);
+     }
+     return false;
+ }*/
 
     gst_element_sync_state_with_parent(_videoSink);
 

@@ -1510,6 +1510,7 @@ void Vehicle::_handleRCChannels(mavlink_message_t& message)
     // 16. Kanal Değerini Al, gimbal YAW ekseni pitch
     int channel16Yaw = pwmValues[15];
     static double angleYaw = 0;
+    static double speed = 15;
     if (std::abs(channel16Yaw - 1500) > 5) {
         if (angleYaw >= -90.0 && angleYaw <= 90.0) {
             //angleYaw += (channel16Yaw - 1500) / 20;
@@ -1522,8 +1523,6 @@ void Vehicle::_handleRCChannels(mavlink_message_t& message)
         }
         //qDebug() << "yaw Kanal Yeni Değer:" << angleYaw;
         // "yaw" ekseni için komut oluşturuluyor.
-        //double speed = 1 + (std::abs(channel16Yaw - 1500) / 33.5);
-        double speed = 1 + (std::abs(channel16Yaw - 1500) / 40);
         QString command = buildAngleCommand("yaw", angleYaw, speed);
         if (!command.isEmpty()) {
             QHostAddress targetAddress("192.168.144.108");  // Hedef IP (örnekte Python kodundakine uyarlanmış)
@@ -1546,10 +1545,7 @@ void Vehicle::_handleRCChannels(mavlink_message_t& message)
         }else if(anglePitch >= 90.0){
             anglePitch = 90.0;
         }
-        //qDebug() << "pitch Kanal Yeni Değer:" << anglePitch;
         // "Pitch" ekseni için komut oluşturuluyor.
-        //double speed = 1 + (std::abs(channel16Pitch - 1500) / 33.5);
-        double speed = 1 + (std::abs(channel16Pitch - 1500) / 40);
         QString command = buildAngleCommand("pitch", anglePitch, speed);
         if (!command.isEmpty()) {
             //qDebug() << "pitch Kanal Yeni Değer:" << anglePitch;
