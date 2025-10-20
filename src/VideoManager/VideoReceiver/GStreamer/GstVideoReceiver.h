@@ -32,7 +32,7 @@ class Worker : public QThread
 {
     Q_OBJECT
 
-public:
+   public:
     bool needDispatch() {
         return QThread::currentThread() != this;
     }
@@ -54,7 +54,7 @@ public:
         }
     }
 
-protected:
+   protected:
     void run() {
         while(!_shutdown) {
             _taskQueueSync.lock();
@@ -71,7 +71,7 @@ protected:
         }
     }
 
-private:
+   private:
     typedef std::function<void()> Task;
     QWaitCondition      _taskQueueUpdate;
     QMutex              _taskQueueSync;
@@ -83,11 +83,11 @@ class GstVideoReceiver : public VideoReceiver
 {
     Q_OBJECT
 
-public:
+   public:
     explicit GstVideoReceiver(QObject* parent = nullptr);
     ~GstVideoReceiver(void);
 
-public slots:
+   public slots:
     virtual void start(const QString& uri, unsigned timeout, int buffer = 0);
     virtual void stop(void);
     virtual void startDecoding(void* sink);
@@ -96,11 +96,11 @@ public slots:
     virtual void stopRecording(void);
     virtual void takeScreenshot(const QString& imageFile);
 
-protected slots:
+   protected slots:
     virtual void _watchdog(void);
     virtual void _handleEOS(void);
 
-protected:
+   protected:
     virtual GstElement* _makeSource(const QString& uri);
     virtual GstElement* _makeDecoder(GstCaps* caps = nullptr, GstElement* videoSink = nullptr);
     virtual GstElement* _makeFileSink(const QString& videoFile, FILE_FORMAT format);
@@ -153,7 +153,7 @@ protected:
 
     QTimer              _watchdogTimer;
 
-    //-- RTSP UDP reconnect timeout
+            //-- RTSP UDP reconnect timeout
     uint64_t            _udpReconnect_us;
 
     QString             _uri;

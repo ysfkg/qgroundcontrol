@@ -25,9 +25,6 @@
 #include <QImage>
 #include <QFile>
 
-#include <QMessageBox>
-
-
 QGC_LOGGING_CATEGORY(VideoReceiverLog, "VideoReceiverLog")
 
 //-----------------------------------------------------------------------------
@@ -84,7 +81,6 @@ GstVideoReceiver::start(const QString& uri, unsigned timeout, int buffer)
         });
         return;
     }
-
 
     if(_pipeline) {
         qCCritical(VideoReceiverLog) << "Already running!" << _uri;
