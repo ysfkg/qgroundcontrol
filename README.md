@@ -10,8 +10,9 @@
 </p>
 ************************** v1.0 ************************ 
 +Gimbal hareket komutları eklendi 
+
 +Kamera görüntü gecikemsi azaltılmaya çalışıldı  
-+Kamera görüntüsü yakınlaştırma eklendi
++Kamera görüntüsü yakınlaştırma eklendi 
 
 ************************** v1.0.1 **********************  Üsttekiler ile birleştirildi  
 +Kamera fotoğraf çekme komutları eklendi 
