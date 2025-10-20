@@ -8,8 +8,8 @@
     <img src="https://img.shields.io/github/release/mavlink/QGroundControl.svg" alt="Latest Release">
   </a>
 </p>
-************************** v1.0 ************************  
-+Gimbal hareket komutları eklendi  
+************************** v1.0 ************************ 
++Gimbal hareket komutları eklendi 
 +Kamera görüntü gecikemsi azaltılmaya çalışıldı  
 +Kamera görüntüsü yakınlaştırma eklendi
 
