@@ -9,10 +9,16 @@
   </a>
 </p>
 ************************** v1.0 ************************  
-
 +Gimbal hareket komutları eklendi  
 +Kamera görüntü gecikemsi azaltılmaya çalışıldı  
 +Kamera görüntüsü yakınlaştırma eklendi
 
 ************************** v1.0.1 **********************  Üsttekiler ile birleştirildi  
 +Kamera fotoğraf çekme komutları eklendi 
+
+************************** v1.1 ***********************
+Video Kaynağı 2 olacak şekilde güncellendi
+
+*************************** v1.2 *********************** Üsttekiler ile birleştirildi
+Kalan pil yüzdesi için algoritma eklendi
+Arayüzde düzeltmeler yapıldı
