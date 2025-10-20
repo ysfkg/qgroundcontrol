@@ -20,5 +20,5 @@
 +Video Kaynağı 2 olacak şekilde güncellendi
 
 *************************** v1.2 *********************** Üsttekiler ile birleştirildi   
-+Kalan pil yüzdesi için algoritma eklendi
++Kalan pil yüzdesi için algoritma eklendi  
 +Arayüzde düzeltmeler yapıldı
