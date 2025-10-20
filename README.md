@@ -24,6 +24,6 @@
 +Kalan pil yüzdesi için algoritma eklendi  
 +Arayüzde düzeltmeler yapıldı 
  
-*************************** v1.2 *********************** Üsttekiler ile birleştirildi 
- +Gimbal hareketleri düz pot ile çalışacak şekilde güncellendi, vehicle.cc dosyası 
+*************************** v1.2 *********************** Üsttekiler ile birleştirildi  
++Gimbal hareketleri düz pot ile çalışacak şekilde güncellendi, vehicle.cc dosyası  
 
