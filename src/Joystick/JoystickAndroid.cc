@@ -293,7 +293,11 @@ bool JoystickAndroid::handleGenericMotionEvent(jobject event)
     return true;
 }
 
-
+int JoystickAndroid::_getAxis(int i) const
+{
+    int axis = axisValue[i];
+    return axis;
+}
 
 int  JoystickAndroid::_getAndroidHatAxis(int axisHatCode) const
 {
