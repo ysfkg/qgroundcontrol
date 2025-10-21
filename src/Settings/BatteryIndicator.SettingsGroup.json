@@ -23,6 +23,13 @@
             "type": "uint32",
             "default": 60,
             "units": "%"
+        },
+        {
+            "name": "threshold3",
+            "shortDesc": "Battery level threshold 3",
+            "type": "uint32",
+            "default": 40,
+            "units": "%"
         }
     ]
 }

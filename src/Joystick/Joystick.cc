@@ -592,6 +592,9 @@ void Joystick::_handleAxis()
         emit rawAxisValueChanged(axisIndex, newAxisValue);
     }
 
+    // Read physical joystick axis 14 (index 13), perform math, and print debug output
+   
+
     if (!_activeVehicle->joystickEnabled() || _calibrationMode || !_calibrated) {
         return;
     }

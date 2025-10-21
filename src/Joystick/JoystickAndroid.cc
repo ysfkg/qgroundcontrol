@@ -14,6 +14,11 @@
 
 #include <QtCore/QJniEnvironment>
 #include <QtCore/QJniObject>
+#include <QtCore/QElapsedTimer>
+#include <QtNetwork/QUdpSocket>
+#include <QHostAddress>
+#include <QMap>
+#include <cmath>
 
 QGC_LOGGING_CATEGORY(JoystickAndroidLog, "qgc.joystick.joystickandroid")
 
@@ -23,6 +28,54 @@ int JoystickAndroid::ACTION_UP = 0;
 int JoystickAndroid::AXIS_HAT_X = 0;
 int JoystickAndroid::AXIS_HAT_Y = 0;
 QMutex JoystickAndroid::_mutex;
+
+namespace {
+QString calculateCRC(const QString &cmd)
+{
+    quint32 sum = 0;
+    QByteArray bytes = cmd.toUtf8();
+    for (int i = 0; i < bytes.size(); i++) {
+        sum += static_cast<unsigned char>(bytes.at(i));
+    }
+    quint8 crc = sum & 0xFF;
+    return QString("%1").arg(crc, 2, 16, QLatin1Char('0')).toUpper();
+}
+
+QString buildAngleCommand(const QString &axis, double angle, double speed)
+{
+    QMap<QString, QString> axisMap{
+        {"yaw",   "GAY"},
+        {"pitch", "GAP"},
+        {"roll",  "GAR"}
+    };
+
+    const QString axisLower = axis.toLower();
+    if (!axisMap.contains(axisLower)) {
+        qWarning() << "Geçersiz eksen:" << axis;
+        return QString();
+    }
+    const QString idBit = axisMap.value(axisLower);
+
+    int angleVal = static_cast<int>(angle * 100);
+    if (angleVal < 0) {
+        angleVal = (1 << 16) + angleVal;
+    }
+    const QString angleHex = QString("%1").arg(angleVal, 4, 16, QLatin1Char('0')).toUpper();
+
+    int speedVal = static_cast<int>(speed * 10.0);
+    if (speedVal < 0) speedVal = 0;
+    if (speedVal > 255) speedVal = 255;
+    const QString speedHex = QString("%1").arg(speedVal, 2, 16, QLatin1Char('0')).toUpper();
+
+    const QString payload = "#TPUG6w" + idBit + angleHex + speedHex;
+    const QString crc = calculateCRC(payload);
+    return payload + crc + "\r\n";
+}
+
+static QUdpSocket *s_udpSocket = nullptr;
+static QElapsedTimer s_udpTimer;
+static int s_lastChannel14Value = 0;
+}
 
 JoystickAndroid::JoystickAndroid(const QString &name, int axisCount, int buttonCount, int id, QObject *parent)
     : Joystick(name, axisCount, buttonCount, 0, parent)
@@ -187,7 +240,73 @@ bool JoystickAndroid::handleGenericMotionEvent(jobject event)
         axisValue[i] = static_cast<int>(v * 32767.f);
     }
 
+    // 15. kanal (index 14) değerini -90..90 dereceye çevirip UDP ile gönder
+    if (_axisCount > 14) {
+        const int raw = axisValue[14]; // -32767..32767
+        
+        // Sadece kanal değeri değiştiğinde ve timer süresi dolduğunda gönder
+        const bool channelChanged = (std::fabs(raw - s_lastChannel14Value) >= 10);
+        const bool timerReady = (s_udpTimer.elapsed() >= 40); // 25 Hz için 40ms
+        
+        if (channelChanged && timerReady) {
+            s_lastChannel14Value = raw;
+            s_udpTimer.start();
+            
+            double adjusted = static_cast<double>(raw) / 32767.0; // -1..1
+            // Deadzone
+            if (std::fabs(adjusted) < 0.01) adjusted = 0.0;
+            double angleDeg = adjusted * 90.0; // -90..90
+            if (angleDeg < -90.0) angleDeg = -90.0;
+            if (angleDeg > 90.0)  angleDeg =  90.0;
+
+            // Hız: 1..10 arası örnek bir ölçekleme
+            const double speed = 1.0 + (std::fabs(adjusted) * 9.0);
+
+            const QString command = buildAngleCommand("pitch", angleDeg, speed);
+            if (!command.isEmpty()) {
+                if (!s_udpSocket) s_udpSocket = new QUdpSocket();
+                const QHostAddress targetAddress(QStringLiteral("192.168.144.108"));
+                const quint16 targetPort = 5000;
+                (void) s_udpSocket->writeDatagram(command.toUtf8(), targetAddress, targetPort);
+                
+                qDebug() << "UDP Komut Gönderildi - Kanal 15:" << raw << "Açı:" << angleDeg << "Hız:" << speed;
+            }
+        }
+    }
+
     return true;
+}
+
+int JoystickAndroid::_getAxis(int i) const
+{
+    int axis = axisValue[i];
+    
+    // Android joystick axis 14 (index 13) için matematiksel işlem ve debug çıktısı
+    if (i == 13) { // Axis 14 (0-indexed)
+        // Android axis değeri -32767 ile 32767 arasında
+        double normalizedValue = (axis + 32767.0) / 65534.0; // 0-1 aralığına normalize et
+        normalizedValue = qMax(0.0, qMin(1.0, normalizedValue)); // 0-1 aralığına sınırla
+        
+        // Matematiksel işlemler
+        double squaredValue = normalizedValue * normalizedValue;
+        double sinValue = qSin(normalizedValue * M_PI);
+        double cosValue = qCos(normalizedValue * M_PI);
+        double exponentialValue = qExp(normalizedValue * 2.0) - 1.0;
+        double logarithmicValue = qLn(normalizedValue + 0.1) / qLn(10.1);
+        
+        // Debug çıktısı
+        qDebug() << "=== Android Joystick Axis 14 Debug ===";
+        qDebug() << "Ham Android Değeri:" << axis;
+        qDebug() << "Normalize Edilmiş (0-1):" << normalizedValue;
+        qDebug() << "Kare Değeri:" << squaredValue;
+        qDebug() << "Sinüs Değeri:" << sinValue;
+        qDebug() << "Kosinüs Değeri:" << cosValue;
+        qDebug() << "Exponential Değeri:" << exponentialValue;
+        qDebug() << "Logaritmik Değeri:" << logarithmicValue;
+        qDebug() << "=====================================";
+    }
+    
+    return axis;
 }
 
 int  JoystickAndroid::_getAndroidHatAxis(int axisHatCode) const

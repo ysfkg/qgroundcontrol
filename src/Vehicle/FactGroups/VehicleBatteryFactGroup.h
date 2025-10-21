@@ -18,7 +18,7 @@ class VehicleBatteryFactGroup : public FactGroup
 {
     Q_OBJECT
 
-   public:
+public:
     VehicleBatteryFactGroup(uint8_t batteryId,Vehicle* vehicle, QObject* parent = nullptr);
 
     Q_PROPERTY(Fact* id                 READ id                 CONSTANT)
@@ -47,23 +47,24 @@ class VehicleBatteryFactGroup : public FactGroup
     Fact* timeRemainingStr          () { return &_timeRemainingStrFact; }
     Fact* chargeState               () { return &_chargeStateFact; }
 
-            /// Creates a new fact group for the battery id as needed and updates the Vehicle with it
+    /// Creates a new fact group for the battery id as needed and updates the Vehicle with it
     static void handleMessageForFactGroupCreation(Vehicle* vehicle, mavlink_message_t& message);
 
-            // Overrides from FactGroup
+    // Overrides from FactGroup
     void handleMessage(Vehicle* vehicle, mavlink_message_t& message) override;
 
-   private slots:
+private slots:
     void _timeRemainingChanged(QVariant value);
     void                     _printBatteryInfoToConsole        (Vehicle* vehicle);
 
-   private:
+private:
     static void                     _handleHighLatency          (Vehicle* vehicle, mavlink_message_t& message);
     static void                     _handleHighLatency2         (Vehicle* vehicle, mavlink_message_t& message);
     static void                     _handleBatteryStatus        (Vehicle* vehicle, mavlink_message_t& message);
 
     bool _isFirstTime = true;
     double _initialRemainingBattCapacity = qQNaN();
+    bool _tenPercentTriggerFired = false;
 
     static VehicleBatteryFactGroup* _findOrAddBatteryGroupById  (Vehicle* vehicle, uint8_t batteryId);
 

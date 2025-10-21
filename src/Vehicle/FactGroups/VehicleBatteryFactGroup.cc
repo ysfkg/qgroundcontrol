@@ -7,211 +7,240 @@
  *
  ****************************************************************************/
 
-#include "VehicleBatteryFactGroup.h"
-#include "QmlObjectListModel.h"
-#include "Vehicle.h"
-#include "ParameterManager.h"
-
-const char* VehicleBatteryFactGroup::_batteryFactGroupNamePrefix = "battery";
-
-VehicleBatteryFactGroup::VehicleBatteryFactGroup(uint8_t batteryId, Vehicle* vehicle, QObject* parent)
-    : FactGroup             (1000, ":/json/Vehicle/BatteryFact.json", parent),
-      _vehicle(vehicle)
-      , _batteryIdFact        (0, _batteryIdFactName,                 FactMetaData::valueTypeUint8)
-      , _batteryFunctionFact  (0, _batteryFunctionFactName,           FactMetaData::valueTypeUint8)
-      , _batteryTypeFact      (0, _batteryTypeFactName,               FactMetaData::valueTypeUint8)
-      , _voltageFact          (0, _voltageFactName,                   FactMetaData::valueTypeDouble)
-      , _currentFact          (0, _currentFactName,                   FactMetaData::valueTypeDouble)
-      , _mahConsumedFact      (0, _mahConsumedFactName,               FactMetaData::valueTypeDouble)
-      , _temperatureFact      (0, _temperatureFactName,               FactMetaData::valueTypeDouble)
-      , _percentRemainingFact (0, _percentRemainingFactName,          FactMetaData::valueTypeDouble)
-      , _timeRemainingFact    (0, _timeRemainingFactName,             FactMetaData::valueTypeDouble)
-      , _timeRemainingStrFact (0, _timeRemainingStrFactName,          FactMetaData::valueTypeString)
-      , _chargeStateFact      (0, _chargeStateFactName,               FactMetaData::valueTypeUint8)
-      , _instantPowerFact     (0, _instantPowerFactName,              FactMetaData::valueTypeDouble)
-{
-    _addFact(&_batteryIdFact,               _batteryIdFactName);
-    _addFact(&_batteryFunctionFact,         _batteryFunctionFactName);
-    _addFact(&_batteryTypeFact,             _batteryTypeFactName);
-    _addFact(&_voltageFact,                 _voltageFactName);
-    _addFact(&_currentFact,                 _currentFactName);
-    _addFact(&_mahConsumedFact,             _mahConsumedFactName);
-    _addFact(&_temperatureFact,             _temperatureFactName);
-    _addFact(&_percentRemainingFact,        _percentRemainingFactName);
-    _addFact(&_timeRemainingFact,           _timeRemainingFactName);
-    _addFact(&_timeRemainingStrFact,        _timeRemainingStrFactName);
-    _addFact(&_chargeStateFact,             _chargeStateFactName);
-    _addFact(&_instantPowerFact,            _instantPowerFactName);
-
-    _batteryIdFact.setRawValue          (batteryId);
-    _batteryFunctionFact.setRawValue    (MAV_BATTERY_FUNCTION_UNKNOWN);
-    _batteryTypeFact.setRawValue        (MAV_BATTERY_TYPE_UNKNOWN);
-    _voltageFact.setRawValue            (qQNaN());
-    _currentFact.setRawValue            (qQNaN());
-    _mahConsumedFact.setRawValue        (qQNaN());
-    _temperatureFact.setRawValue        (qQNaN());
-    _percentRemainingFact.setRawValue   (qQNaN());
-    _timeRemainingFact.setRawValue      (qQNaN());
-    _chargeStateFact.setRawValue        (MAV_BATTERY_CHARGE_STATE_UNDEFINED);
-    _instantPowerFact.setRawValue       (qQNaN());
-
-
-}
-
-
-void VehicleBatteryFactGroup::handleMessageForFactGroupCreation(Vehicle* vehicle, mavlink_message_t& message)
-{
-    switch (message.msgid) {
-        case MAVLINK_MSG_ID_HIGH_LATENCY:
-        case MAVLINK_MSG_ID_HIGH_LATENCY2:
-            _findOrAddBatteryGroupById(vehicle, 0);
-            break;
-        case MAVLINK_MSG_ID_BATTERY_STATUS:
-        {
-            mavlink_battery_status_t batteryStatus;
-            mavlink_msg_battery_status_decode(&message, &batteryStatus);
-            _findOrAddBatteryGroupById(vehicle, batteryStatus.id);
+ #include "VehicleBatteryFactGroup.h"
+ #include "QmlObjectListModel.h"
+ #include "Vehicle.h"
+ #include "ParameterManager.h"
+ 
+ const char* VehicleBatteryFactGroup::_batteryFactGroupNamePrefix = "battery";
+ 
+ VehicleBatteryFactGroup::VehicleBatteryFactGroup(uint8_t batteryId, Vehicle* vehicle, QObject* parent)
+     : FactGroup             (1000, ":/json/Vehicle/BatteryFact.json", parent),
+       _vehicle(vehicle)
+     , _batteryIdFact        (0, _batteryIdFactName,                 FactMetaData::valueTypeUint8)
+     , _batteryFunctionFact  (0, _batteryFunctionFactName,           FactMetaData::valueTypeUint8)
+     , _batteryTypeFact      (0, _batteryTypeFactName,               FactMetaData::valueTypeUint8)
+     , _voltageFact          (0, _voltageFactName,                   FactMetaData::valueTypeDouble)
+     , _currentFact          (0, _currentFactName,                   FactMetaData::valueTypeDouble)
+     , _mahConsumedFact      (0, _mahConsumedFactName,               FactMetaData::valueTypeDouble)
+     , _temperatureFact      (0, _temperatureFactName,               FactMetaData::valueTypeDouble)
+     , _percentRemainingFact (0, _percentRemainingFactName,          FactMetaData::valueTypeDouble)
+     , _timeRemainingFact    (0, _timeRemainingFactName,             FactMetaData::valueTypeDouble)
+     , _timeRemainingStrFact (0, _timeRemainingStrFactName,          FactMetaData::valueTypeString)
+     , _chargeStateFact      (0, _chargeStateFactName,               FactMetaData::valueTypeUint8)
+     , _instantPowerFact     (0, _instantPowerFactName,              FactMetaData::valueTypeDouble)
+ {
+     _addFact(&_batteryIdFact,               _batteryIdFactName);
+     _addFact(&_batteryFunctionFact,         _batteryFunctionFactName);
+     _addFact(&_batteryTypeFact,             _batteryTypeFactName);
+     _addFact(&_voltageFact,                 _voltageFactName);
+     _addFact(&_currentFact,                 _currentFactName);
+     _addFact(&_mahConsumedFact,             _mahConsumedFactName);
+     _addFact(&_temperatureFact,             _temperatureFactName);
+     _addFact(&_percentRemainingFact,        _percentRemainingFactName);
+     _addFact(&_timeRemainingFact,           _timeRemainingFactName);
+     _addFact(&_timeRemainingStrFact,        _timeRemainingStrFactName);
+     _addFact(&_chargeStateFact,             _chargeStateFactName);
+     _addFact(&_instantPowerFact,            _instantPowerFactName);
+ 
+     _batteryIdFact.setRawValue          (batteryId);
+     _batteryFunctionFact.setRawValue    (MAV_BATTERY_FUNCTION_UNKNOWN);
+     _batteryTypeFact.setRawValue        (MAV_BATTERY_TYPE_UNKNOWN);
+     _voltageFact.setRawValue            (qQNaN());
+     _currentFact.setRawValue            (qQNaN());
+     _mahConsumedFact.setRawValue        (qQNaN());
+     _temperatureFact.setRawValue        (qQNaN());
+     _percentRemainingFact.setRawValue   (qQNaN());
+     _timeRemainingFact.setRawValue      (qQNaN());
+     _chargeStateFact.setRawValue        (MAV_BATTERY_CHARGE_STATE_UNDEFINED);
+     _instantPowerFact.setRawValue       (qQNaN());
+ 
+ 
+ }
+ 
+ 
+ void VehicleBatteryFactGroup::handleMessageForFactGroupCreation(Vehicle* vehicle, mavlink_message_t& message)
+ {
+     switch (message.msgid) {
+     case MAVLINK_MSG_ID_HIGH_LATENCY:
+     case MAVLINK_MSG_ID_HIGH_LATENCY2:
+         _findOrAddBatteryGroupById(vehicle, 0);
+         break;
+     case MAVLINK_MSG_ID_BATTERY_STATUS:
+     {
+         mavlink_battery_status_t batteryStatus;
+         mavlink_msg_battery_status_decode(&message, &batteryStatus);
+         _findOrAddBatteryGroupById(vehicle, batteryStatus.id);
+     }
+         break;
+     }
+ }
+ 
+ void VehicleBatteryFactGroup::handleMessage(Vehicle* vehicle, mavlink_message_t& message)
+ {
+     switch (message.msgid) {
+     case MAVLINK_MSG_ID_HIGH_LATENCY:
+         _handleHighLatency(vehicle, message);
+         break;
+     case MAVLINK_MSG_ID_HIGH_LATENCY2:
+         _handleHighLatency2(vehicle, message);
+         break;
+     case MAVLINK_MSG_ID_BATTERY_STATUS:
+         _handleBatteryStatus(vehicle, message);
+         break;
+     }
+ }
+ 
+ void VehicleBatteryFactGroup::_handleHighLatency(Vehicle* vehicle, mavlink_message_t& message)
+ {
+     mavlink_high_latency_t highLatency;
+     mavlink_msg_high_latency_decode(&message, &highLatency);
+ 
+     VehicleBatteryFactGroup* group = _findOrAddBatteryGroupById(vehicle, 0);
+     group->percentRemaining()->setRawValue(highLatency.battery_remaining == UINT8_MAX ? qQNaN() : highLatency.battery_remaining);
+     group->_setTelemetryAvailable(true);
+ }
+ 
+ void VehicleBatteryFactGroup::_handleHighLatency2(Vehicle* vehicle, mavlink_message_t& message)
+ {
+     mavlink_high_latency2_t highLatency2;
+     mavlink_msg_high_latency2_decode(&message, &highLatency2);
+ 
+     VehicleBatteryFactGroup* group = _findOrAddBatteryGroupById(vehicle, 0);
+     group->percentRemaining()->setRawValue(highLatency2.battery == -1 ? qQNaN() : highLatency2.battery);
+     group->_setTelemetryAvailable(true);
+ }
+ 
+ // VehicleBatteryFactGroup.cc dosyasına ekle:
+ void VehicleBatteryFactGroup::_printBatteryInfoToConsole(Vehicle* vehicle)
+ {
+ 
+ }
+ 
+ void VehicleBatteryFactGroup::_handleBatteryStatus(Vehicle* vehicle, mavlink_message_t& message)
+ {
+     mavlink_battery_status_t batteryStatus;
+     mavlink_msg_battery_status_decode(&message, &batteryStatus);
+ 
+     VehicleBatteryFactGroup* group = _findOrAddBatteryGroupById(vehicle, batteryStatus.id);
+ 
+     double totalVoltage = qQNaN();
+     for (int i=0; i<10; i++) {
+         double cellVoltage = batteryStatus.voltages[i] == UINT16_MAX ? qQNaN() : static_cast<double>(batteryStatus.voltages[i]) / 1000.0;
+         if (qIsNaN(cellVoltage)) {
+             break;
+         }
+         if (i == 0) {
+             totalVoltage = cellVoltage;
+         } else {
+             totalVoltage += cellVoltage;
+         }
+     }
+     for (int i=0; i<4; i++) {
+         double cellVoltage = batteryStatus.voltages_ext[i] == 0 ? qQNaN() : static_cast<double>(batteryStatus.voltages_ext[i]) / 1000.0;
+         if (qIsNaN(cellVoltage)) {
+             break;
+         }
+         totalVoltage += cellVoltage;
+     }
+ 
+     group->function()->setRawValue          (batteryStatus.battery_function);
+     group->type()->setRawValue              (batteryStatus.type);
+     group->temperature()->setRawValue       (batteryStatus.temperature == INT16_MAX ?   qQNaN() : static_cast<double>(batteryStatus.temperature) / 100.0);
+     group->voltage()->setRawValue           (totalVoltage);
+     group->current()->setRawValue           (batteryStatus.current_battery == -1 ?      qQNaN() : static_cast<double>(batteryStatus.current_battery) / 100.0);
+     group->mahConsumed()->setRawValue       (batteryStatus.current_consumed == -1  ?    qQNaN() : batteryStatus.current_consumed);
+     //group->percentRemaining()->setRawValue  (batteryStatus.battery_remaining == -1 ?    qQNaN() : batteryStatus.battery_remaining);
+     group->timeRemaining()->setRawValue     (batteryStatus.time_remaining == 0 ?        qQNaN() : batteryStatus.time_remaining);
+     group->chargeState()->setRawValue       (batteryStatus.charge_state);
+     group->instantPower()->setRawValue      (totalVoltage * group->current()->rawValue().toDouble());
+     group->_setTelemetryAvailable(true);
+ 
+     double Consumed_mAh = (batteryStatus.current_consumed == -1  ?    qQNaN() : batteryStatus.current_consumed);
+ 
+     // Only attempt to read parameters once the parameter manager reports ready
+     ParameterManager* paramMgr = vehicle->parameterManager();
+     if (!paramMgr->parametersReady()) {
+         return;
+     }
+ 
+     const int compId = ParameterManager::defaultComponentId;
+     if (paramMgr->parameterExists(compId, "BATT_LOW_VOLT") &&
+         paramMgr->parameterExists(compId, "BATT_CAPACITY") &&
+         paramMgr->parameterExists(compId, "MOT_BAT_VOLT_MAX")) {
+         const double battLowVoltage = paramMgr->getParameter(compId, "BATT_LOW_VOLT")->rawValue().toDouble();
+         const double battCapacity   = paramMgr->getParameter(compId, "BATT_CAPACITY")->rawValue().toDouble();
+         const double battmaxVoltage = paramMgr->getParameter(compId, "MOT_BAT_VOLT_MAX")->rawValue().toDouble();
+ 
+         const double denomVoltage = (battmaxVoltage / 1.003) - battLowVoltage;
+         if (group->_isFirstTime && denomVoltage > 0.0 && !qIsNaN(totalVoltage)) {
+             group->_initialRemainingBattCapacity = Consumed_mAh + battCapacity * (totalVoltage - battLowVoltage) / denomVoltage;
+             group->_isFirstTime = false;
+         }
+ 
+        // One-time 10% threshold trigger: when totalVoltage approaches (battLowVoltage + 10% of (battmaxVoltage - battLowVoltage)) within 1%
+        if (!group->_tenPercentTriggerFired && !qIsNaN(totalVoltage)) {
+            const double diff = battmaxVoltage - battLowVoltage;
+            if (diff > 0.0) {
+                const double threshold = battLowVoltage + 0.10 * diff;
+                const double tol = 0.01 * diff; // 1% of the difference
+                if (qAbs(totalVoltage - threshold) <= tol) {
+                    group->_initialRemainingBattCapacity = Consumed_mAh + battCapacity*0.1;
+                    group->percentRemaining()->setRawValue(0.1);
+                    group->_tenPercentTriggerFired = true;
+                }
+            }
         }
-        break;
-    }
-}
 
-void VehicleBatteryFactGroup::handleMessage(Vehicle* vehicle, mavlink_message_t& message)
-{
-    switch (message.msgid) {
-        case MAVLINK_MSG_ID_HIGH_LATENCY:
-            _handleHighLatency(vehicle, message);
-            break;
-        case MAVLINK_MSG_ID_HIGH_LATENCY2:
-            _handleHighLatency2(vehicle, message);
-            break;
-        case MAVLINK_MSG_ID_BATTERY_STATUS:
-            _handleBatteryStatus(vehicle, message);
-            break;
-    }
-}
-
-void VehicleBatteryFactGroup::_handleHighLatency(Vehicle* vehicle, mavlink_message_t& message)
-{
-    mavlink_high_latency_t highLatency;
-    mavlink_msg_high_latency_decode(&message, &highLatency);
-
-    VehicleBatteryFactGroup* group = _findOrAddBatteryGroupById(vehicle, 0);
-    group->percentRemaining()->setRawValue(highLatency.battery_remaining == UINT8_MAX ? qQNaN() : highLatency.battery_remaining);
-    group->_setTelemetryAvailable(true);
-}
-
-void VehicleBatteryFactGroup::_handleHighLatency2(Vehicle* vehicle, mavlink_message_t& message)
-{
-    mavlink_high_latency2_t highLatency2;
-    mavlink_msg_high_latency2_decode(&message, &highLatency2);
-
-    VehicleBatteryFactGroup* group = _findOrAddBatteryGroupById(vehicle, 0);
-    group->percentRemaining()->setRawValue(highLatency2.battery == -1 ? qQNaN() : highLatency2.battery);
-    group->_setTelemetryAvailable(true);
-}
-
-// VehicleBatteryFactGroup.cc dosyasına ekle:
-void VehicleBatteryFactGroup::_printBatteryInfoToConsole(Vehicle* vehicle)
-{
-
-}
-
-void VehicleBatteryFactGroup::_handleBatteryStatus(Vehicle* vehicle, mavlink_message_t& message)
-{
-    mavlink_battery_status_t batteryStatus;
-    mavlink_msg_battery_status_decode(&message, &batteryStatus);
-
-    VehicleBatteryFactGroup* group = _findOrAddBatteryGroupById(vehicle, batteryStatus.id);
-
-    double totalVoltage = qQNaN();
-    for (int i=0; i<10; i++) {
-        double cellVoltage = batteryStatus.voltages[i] == UINT16_MAX ? qQNaN() : static_cast<double>(batteryStatus.voltages[i]) / 1000.0;
-        if (qIsNaN(cellVoltage)) {
-            break;
-        }
-        if (i == 0) {
-            totalVoltage = cellVoltage;
-        } else {
-            totalVoltage += cellVoltage;
-        }
-    }
-    for (int i=0; i<4; i++) {
-        double cellVoltage = batteryStatus.voltages_ext[i] == 0 ? qQNaN() : static_cast<double>(batteryStatus.voltages_ext[i]) / 1000.0;
-        if (qIsNaN(cellVoltage)) {
-            break;
-        }
-        totalVoltage += cellVoltage;
-    }
-
-    group->function()->setRawValue          (batteryStatus.battery_function);
-    group->type()->setRawValue              (batteryStatus.type);
-    group->temperature()->setRawValue       (batteryStatus.temperature == INT16_MAX ?   qQNaN() : static_cast<double>(batteryStatus.temperature) / 100.0);
-    group->voltage()->setRawValue           (totalVoltage);
-    group->current()->setRawValue           (batteryStatus.current_battery == -1 ?      qQNaN() : static_cast<double>(batteryStatus.current_battery) / 100.0);
-    group->mahConsumed()->setRawValue       (batteryStatus.current_consumed == -1  ?    qQNaN() : batteryStatus.current_consumed);
-    //group->percentRemaining()->setRawValue  (batteryStatus.battery_remaining == -1 ?    qQNaN() : batteryStatus.battery_remaining);
-    group->timeRemaining()->setRawValue     (batteryStatus.time_remaining == 0 ?        qQNaN() : batteryStatus.time_remaining);
-    group->chargeState()->setRawValue       (batteryStatus.charge_state);
-    group->instantPower()->setRawValue      (totalVoltage * group->current()->rawValue().toDouble());
-    group->_setTelemetryAvailable(true);
-
-    double Consumed_mAh = (batteryStatus.current_consumed == -1  ?    qQNaN() : batteryStatus.current_consumed);
-
-    if (vehicle->parameterManager()->parameterExists(vehicle->id(), "BATT_LOW_VOLT")) {
-        double battLowVoltage = vehicle->parameterManager()->getParameter(-1, "BATT_LOW_VOLT")->rawValue().toDouble();
-        double battCapacity = vehicle->parameterManager()->getParameter(-1, "BATT_CAPACITY")->rawValue().toDouble();
-        double battmaxVoltage = vehicle->parameterManager()->getParameter(-1, "MOT_BAT_VOLT_MAX")->rawValue().toDouble();
-        double initialRemainingBattCapacity;
-        if (group->_isFirstTime) {
-            group->_initialRemainingBattCapacity = battCapacity * (totalVoltage - battLowVoltage) / (battmaxVoltage/1.003 - battLowVoltage);
-            group->_isFirstTime = false;
-        }
-        double currentRemainingBattCapacity = group->_initialRemainingBattCapacity - Consumed_mAh;
-        double percentRemaining = 100 * currentRemainingBattCapacity / battCapacity;
-
-        group->percentRemaining()->setRawValue   (percentRemaining);
-        vehicle->parameterManager()->getParameter(-1, "BATT_CAPACITY")->setRawValue(5000);
-        //qDebug() << "Initial battery capacity calculated:" << group->_initialRemainingBattCapacity;
-    }
-
-}
-
-VehicleBatteryFactGroup* VehicleBatteryFactGroup::_findOrAddBatteryGroupById(Vehicle* vehicle, uint8_t batteryId)
-{
-    QmlObjectListModel* batteries = vehicle->batteries();
-
-            // We maintain the list in order sorted by battery id so the ui shows them sorted.
-    for (int i=0; i<batteries->count(); i++) {
-        VehicleBatteryFactGroup* group = batteries->value<VehicleBatteryFactGroup*>(i);
-        int listBatteryId = group->id()->rawValue().toInt();
-        if (listBatteryId >  batteryId) {
-            VehicleBatteryFactGroup* newBatteryGroup = new VehicleBatteryFactGroup(batteryId,vehicle, batteries);
-            batteries->insert(i, newBatteryGroup);
-            vehicle->_addFactGroup(newBatteryGroup, QStringLiteral("%1%2").arg(_batteryFactGroupNamePrefix).arg(batteryId));
-            return newBatteryGroup;
-        } else if (listBatteryId == batteryId) {
-            return group;
-        }
-    }
-
-    VehicleBatteryFactGroup* newBatteryGroup = new VehicleBatteryFactGroup(batteryId,vehicle, batteries);
-    batteries->append(newBatteryGroup);
-    vehicle->_addFactGroup(newBatteryGroup, QStringLiteral("%1%2").arg(_batteryFactGroupNamePrefix).arg(batteryId));
-
-    return newBatteryGroup;
-}
-
-void VehicleBatteryFactGroup::_timeRemainingChanged(QVariant value)
-{
-    if (qIsNaN(value.toDouble())) {
-        _timeRemainingStrFact.setRawValue("--:--:--");
-    } else {
-        int totalSeconds    = value.toInt();
-        int hours           = totalSeconds / 3600;
-        int minutes         = (totalSeconds % 3600) / 60;
-        int seconds         = totalSeconds % 60;
-
-        _timeRemainingStrFact.setRawValue(QString::asprintf("%02dH:%02dM:%02dS", hours, minutes, seconds));
-    }
-}
+         if (battCapacity > 0.0 && !qIsNaN(group->_initialRemainingBattCapacity) && !qIsNaN(Consumed_mAh)) {
+             double currentRemainingBattCapacity = group->_initialRemainingBattCapacity - Consumed_mAh;
+             double percentRemaining = 100.0 * currentRemainingBattCapacity / battCapacity;
+             if (!qIsNaN(percentRemaining)) {
+                 if (percentRemaining < 0.0) percentRemaining = 0.0;
+                 if (percentRemaining > 100.0) percentRemaining = 100.0;
+                 group->percentRemaining()->setRawValue(percentRemaining);
+             }
+         }
+     }
+ 
+ }
+ 
+ VehicleBatteryFactGroup* VehicleBatteryFactGroup::_findOrAddBatteryGroupById(Vehicle* vehicle, uint8_t batteryId)
+ {
+     QmlObjectListModel* batteries = vehicle->batteries();
+ 
+     // We maintain the list in order sorted by battery id so the ui shows them sorted.
+     for (int i=0; i<batteries->count(); i++) {
+         VehicleBatteryFactGroup* group = batteries->value<VehicleBatteryFactGroup*>(i);
+         int listBatteryId = group->id()->rawValue().toInt();
+         if (listBatteryId >  batteryId) {
+             VehicleBatteryFactGroup* newBatteryGroup = new VehicleBatteryFactGroup(batteryId,vehicle, batteries);
+             batteries->insert(i, newBatteryGroup);
+             vehicle->_addFactGroup(newBatteryGroup, QStringLiteral("%1%2").arg(_batteryFactGroupNamePrefix).arg(batteryId));
+             return newBatteryGroup;
+         } else if (listBatteryId == batteryId) {
+             return group;
+         }
+     }
+ 
+     VehicleBatteryFactGroup* newBatteryGroup = new VehicleBatteryFactGroup(batteryId,vehicle, batteries);
+     batteries->append(newBatteryGroup);
+     vehicle->_addFactGroup(newBatteryGroup, QStringLiteral("%1%2").arg(_batteryFactGroupNamePrefix).arg(batteryId));
+ 
+     return newBatteryGroup;
+ }
+ 
+ void VehicleBatteryFactGroup::_timeRemainingChanged(QVariant value)
+ {
+     if (qIsNaN(value.toDouble())) {
+         _timeRemainingStrFact.setRawValue("--:--:--");
+     } else {
+         int totalSeconds    = value.toInt();
+         int hours           = totalSeconds / 3600;
+         int minutes         = (totalSeconds % 3600) / 60;
+         int seconds         = totalSeconds % 60;
+ 
+         _timeRemainingStrFact.setRawValue(QString::asprintf("%02dH:%02dM:%02dS", hours, minutes, seconds));
+     }
+ }
+ 

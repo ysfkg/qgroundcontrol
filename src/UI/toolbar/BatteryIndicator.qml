@@ -42,6 +42,7 @@ Item {
     // Properties to hold the thresholds
     property int threshold1: _batterySettings.threshold1.rawValue
     property int threshold2: _batterySettings.threshold2.rawValue   
+    property int threshold3: _batterySettings.threshold3.rawValue
 
     Row {
         id:             batteryIndicatorRow
@@ -90,17 +91,31 @@ Item {
                     case MAVLink.MAV_BATTERY_CHARGE_STATE_OK:
                         if (!isNaN(battery.percentRemaining.rawValue)) {
                             if (battery.percentRemaining.rawValue > threshold1) {
-                                return qgcPal.colorGreen 
+                                return qgcPal.colorYellowGreen
                             } else if (battery.percentRemaining.rawValue > threshold2) {
-                                return qgcPal.colorYellowGreen 
+                                return qgcPal.colorYellow
+                            } else if (battery.percentRemaining.rawValue > threshold3) {
+                                return qgcPal.colorOrange
                             } else {
-                                return qgcPal.colorYellow 
+                                return qgcPal.colorRed
                             }
                         } else {
                             return qgcPal.text
                         }
                     case MAVLink.MAV_BATTERY_CHARGE_STATE_LOW:
-                        return qgcPal.colorOrange
+                        if (!isNaN(battery.percentRemaining.rawValue)) {
+                            if (battery.percentRemaining.rawValue > threshold1) {
+                                return qgcPal.colorYellowGreen
+                            } else if (battery.percentRemaining.rawValue > threshold2) {
+                                return qgcPal.colorYellow
+                            } else if (battery.percentRemaining.rawValue > threshold3) {
+                                return qgcPal.colorOrange
+                            } else {
+                                return qgcPal.colorRed
+                            }
+                        } else {
+                            return qgcPal.text
+                        }
                     case MAVLink.MAV_BATTERY_CHARGE_STATE_CRITICAL:
                     case MAVLink.MAV_BATTERY_CHARGE_STATE_EMERGENCY:
                     case MAVLink.MAV_BATTERY_CHARGE_STATE_FAILED:
@@ -116,15 +131,27 @@ Item {
                     case MAVLink.MAV_BATTERY_CHARGE_STATE_OK:
                         if (!isNaN(battery.percentRemaining.rawValue)) {
                             if (battery.percentRemaining.rawValue > threshold1) {
-                                return "/qmlimages/BatteryGreen.svg"
-                            } else if (battery.percentRemaining.rawValue > threshold2) {
                                 return "/qmlimages/BatteryYellowGreen.svg"
+                            } else if (battery.percentRemaining.rawValue > threshold2) {
+                                return "/qmlimages/BatteryYellow.svg"
+                            } else if (battery.percentRemaining.rawValue > threshold3) {
+                                return "/qmlimages/BatteryOrange.svg"
                             } else {
-                                return "/qmlimages/BatteryYellow.svg"    
+                                return "/qmlimages/BatteryOrange.svg"
                             } 
                         }
                     case MAVLink.MAV_BATTERY_CHARGE_STATE_LOW:
-                        return "/qmlimages/BatteryOrange.svg" // Low with orange svg
+                        if (!isNaN(battery.percentRemaining.rawValue)) {
+                            if (battery.percentRemaining.rawValue > threshold1) {
+                                return "/qmlimages/BatteryYellowGreen.svg"
+                            } else if (battery.percentRemaining.rawValue > threshold2) {
+                                return "/qmlimages/BatteryYellow.svg"
+                            } else if (battery.percentRemaining.rawValue > threshold3) {
+                                return "/qmlimages/BatteryOrange.svg"
+                            } else {
+                                return "/qmlimages/BatteryOrange.svg"
+                            }
+                        }
                     case MAVLink.MAV_BATTERY_CHARGE_STATE_CRITICAL:
                         return "/qmlimages/BatteryCritical.svg" // Critical with red svg
                     case MAVLink.MAV_BATTERY_CHARGE_STATE_EMERGENCY:
@@ -371,8 +398,30 @@ Item {
                             }
                         }
 
-                        // Low state
+                        // Threshold 3
                         RowLayout {
+                            spacing: ScreenTools.defaultFontPixelWidth * 0.05  // Tighter spacing for icon and field
+                            QGCColoredImage {
+                                source: "/qmlimages/BatteryOrange.svg"
+                                width: ScreenTools.defaultFontPixelWidth * 6
+                                height: width
+                                fillMode: Image.PreserveAspectFit
+                                color: qgcPal.colorOrange
+                            }
+                            FactTextField {
+                                fact: _batterySettings.threshold3
+                                implicitWidth: ScreenTools.defaultFontPixelWidth * 6
+                                height: ScreenTools.defaultFontPixelHeight * 1.5
+                                enabled: fact.visible
+                                onEditingFinished: {
+                                    // Validate and set the new threshold value
+                                    _batterySettings.setThreshold3(parseInt(text));
+                                }
+                            }
+                        }
+
+                        // Low state
+                        /*RowLayout {
                             spacing: ScreenTools.defaultFontPixelWidth * 0.05  // Tighter spacing for icon and label
                             QGCColoredImage {
                                 source: "/qmlimages/BatteryOrange.svg"
@@ -382,9 +431,9 @@ Item {
                                 color: qgcPal.colorOrange
                             }
                             QGCLabel { text: qsTr("Low") }
-                        }
+                        }*/
 
-                        // Critical state
+                        // Low state
                         RowLayout {
                             spacing: ScreenTools.defaultFontPixelWidth * 0.05  // Tighter spacing for icon and label
                             QGCColoredImage {
@@ -394,7 +443,7 @@ Item {
                                 fillMode: Image.PreserveAspectFit
                                 color: qgcPal.colorRed
                             }
-                            QGCLabel { text: qsTr("Critical") }
+                            QGCLabel { text: qsTr("Low") }
                         }
                     }
                 }
