@@ -133,12 +133,15 @@ QMap<QString, Joystick*> JoystickAndroid::discover()
     static QMap<QString, Joystick*> ret;
 
     QMutexLocker lock(&_mutex);
+    
+    qDebug() << "=== JoystickAndroid::discover() çağrıldı ===";
 
     const QJniObject object = QJniObject::callStaticObjectMethod<jintArray>("android/view/InputDevice", "getDeviceIds");
     jintArray jarr = object.object<jintArray>();
 
     QJniEnvironment env;
     const int len = env->GetArrayLength(jarr);
+    qDebug() << "=== Bulunan cihaz sayısı:" << len << "===";
     jint *const buff = env->GetIntArrayElements(jarr, nullptr);
 
     const int SOURCE_GAMEPAD = QJniObject::getStaticField<jint>("android/view/InputDevice", "SOURCE_GAMEPAD");
@@ -148,7 +151,10 @@ QMap<QString, Joystick*> JoystickAndroid::discover()
     for (int i = 0; i < len; ++i) {
         const QJniObject inputDevice = QJniObject::callStaticObjectMethod("android/view/InputDevice", "getDevice", "(I)Landroid/view/InputDevice;", buff[i]);
         const int sources = inputDevice.callMethod<jint>("getSources", "()I");
+        const QString deviceName = inputDevice.callObjectMethod("getName", "()Ljava/lang/String;").toString();
+        qDebug() << "=== Cihaz" << i << ":" << deviceName << "sources:" << sources << "===";
         if (((sources & SOURCE_GAMEPAD) != SOURCE_GAMEPAD) && ((sources & SOURCE_JOYSTICK) != SOURCE_JOYSTICK)) {
+            qDebug() << "=== Cihaz joystick/gamepad değil, atlanıyor ===";
             continue;
         }
 
@@ -178,6 +184,7 @@ QMap<QString, Joystick*> JoystickAndroid::discover()
         env->ReleaseBooleanArrayElements(jSupportedButtons, supportedButtons, 0);
 
         qCDebug(JoystickAndroidLog) << name << "id:" << buff[i] << "axes:" << axisCount << "buttons:" << buttonCount;
+        qDebug() << "=== Joystick oluşturuluyor:" << name << "axes:" << axisCount << "buttons:" << buttonCount << "===";
 
         ret[name] = new JoystickAndroid(name, axisCount, buttonCount, buff[i]);
     }
@@ -192,6 +199,7 @@ QMap<QString, Joystick*> JoystickAndroid::discover()
 
     env->ReleaseIntArrayElements(jarr, buff, 0);
 
+    qDebug() << "=== JoystickAndroid::discover() tamamlandı, bulunan joystick sayısı:" << ret.size() << "===";
     return ret;
 }
 
@@ -231,7 +239,9 @@ bool JoystickAndroid::handleGenericMotionEvent(jobject event)
 
     QJniObject ev(event);
     const int _deviceId = ev.callMethod<jint>("getDeviceId", "()I");
+    qDebug() << "=== handleGenericMotionEvent çağrıldı, deviceId:" << _deviceId << "beklenen:" << deviceId << "===";
     if (_deviceId != deviceId) {
+        qDebug() << "=== Device ID uyuşmuyor, event reddediliyor ===";
         return false;
     }
 
@@ -240,9 +250,15 @@ bool JoystickAndroid::handleGenericMotionEvent(jobject event)
         axisValue[i] = static_cast<int>(v * 32767.f);
     }
 
+    qCritical() << "===******************************************************************** Android Joystick Axis 14 Debug ===********************************************************************";
     // 15. kanal (index 14) değerini -90..90 dereceye çevirip UDP ile gönder
     if (_axisCount > 14) {
         const int raw = axisValue[14]; // -32767..32767
+
+        // Timer ilk kullanımda başlat
+        if (!s_udpTimer.isValid()) {
+            s_udpTimer.start();
+        }
         
         // Sadece kanal değeri değiştiğinde ve timer süresi dolduğunda gönder
         const bool channelChanged = (std::fabs(raw - s_lastChannel14Value) >= 10);
@@ -277,37 +293,7 @@ bool JoystickAndroid::handleGenericMotionEvent(jobject event)
     return true;
 }
 
-int JoystickAndroid::_getAxis(int i) const
-{
-    int axis = axisValue[i];
-    
-    // Android joystick axis 14 (index 13) için matematiksel işlem ve debug çıktısı
-    if (i == 13) { // Axis 14 (0-indexed)
-        // Android axis değeri -32767 ile 32767 arasında
-        double normalizedValue = (axis + 32767.0) / 65534.0; // 0-1 aralığına normalize et
-        normalizedValue = qMax(0.0, qMin(1.0, normalizedValue)); // 0-1 aralığına sınırla
-        
-        // Matematiksel işlemler
-        double squaredValue = normalizedValue * normalizedValue;
-        double sinValue = qSin(normalizedValue * M_PI);
-        double cosValue = qCos(normalizedValue * M_PI);
-        double exponentialValue = qExp(normalizedValue * 2.0) - 1.0;
-        double logarithmicValue = qLn(normalizedValue + 0.1) / qLn(10.1);
-        
-        // Debug çıktısı
-        qDebug() << "=== Android Joystick Axis 14 Debug ===";
-        qDebug() << "Ham Android Değeri:" << axis;
-        qDebug() << "Normalize Edilmiş (0-1):" << normalizedValue;
-        qDebug() << "Kare Değeri:" << squaredValue;
-        qDebug() << "Sinüs Değeri:" << sinValue;
-        qDebug() << "Kosinüs Değeri:" << cosValue;
-        qDebug() << "Exponential Değeri:" << exponentialValue;
-        qDebug() << "Logaritmik Değeri:" << logarithmicValue;
-        qDebug() << "=====================================";
-    }
-    
-    return axis;
-}
+
 
 int  JoystickAndroid::_getAndroidHatAxis(int axisHatCode) const
 {

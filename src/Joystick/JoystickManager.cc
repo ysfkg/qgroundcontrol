@@ -90,7 +90,9 @@ void JoystickManager::_setActiveJoystickFromSettings()
 #ifdef QGC_SDL_JOYSTICK
     newMap = JoystickSDL::discover();
 #elif defined(Q_OS_ANDROID)
+    qDebug() << "=== JoystickManager::_setActiveJoystickFromSettings() çağrıldı ===";
     newMap = JoystickAndroid::discover();
+    qDebug() << "=== JoystickManager: Bulunan joystick sayısı:" << newMap.size() << "===";
 #endif
 
     if (_activeJoystick && !newMap.contains(_activeJoystick->name())) {
@@ -113,6 +115,7 @@ void JoystickManager::_setActiveJoystickFromSettings()
     emit availableJoysticksChanged();
 
     if (_name2JoystickMap.isEmpty()) {
+        qDebug() << "=== JoystickManager: Hiç joystick bulunamadı ===";
         setActiveJoystick(nullptr);
         return;
     }
@@ -127,6 +130,7 @@ void JoystickManager::_setActiveJoystickFromSettings()
 
     setActiveJoystick(_name2JoystickMap.value(name, _name2JoystickMap.first()));
     settings.setValue(_settingsKeyActiveJoystick, _activeJoystick->name());
+    qDebug() << "=== JoystickManager: Aktif joystick ayarlandı:" << _activeJoystick->name() << "===";
 
     settings.endGroup();
 }
