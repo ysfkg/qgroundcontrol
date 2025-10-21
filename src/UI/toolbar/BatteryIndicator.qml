@@ -95,9 +95,9 @@ Item {
                             } else if (battery.percentRemaining.rawValue > threshold2) {
                                 return qgcPal.colorYellow
                             } else if (battery.percentRemaining.rawValue > threshold3) {
-                                return qgcPal.colorOrange
+                                return qgcPal.colorYellow
                             } else {
-                                return qgcPal.colorRed
+                                return qgcPal.colorOrange
                             }
                         } else {
                             return qgcPal.text
@@ -109,9 +109,9 @@ Item {
                             } else if (battery.percentRemaining.rawValue > threshold2) {
                                 return qgcPal.colorYellow
                             } else if (battery.percentRemaining.rawValue > threshold3) {
-                                return qgcPal.colorOrange
+                                return qgcPal.colorYellow
                             } else {
-                                return qgcPal.colorRed
+                                return qgcPal.colorOrange
                             }
                         } else {
                             return qgcPal.text
@@ -137,7 +137,7 @@ Item {
                             } else if (battery.percentRemaining.rawValue > threshold3) {
                                 return "/qmlimages/BatteryOrange.svg"
                             } else {
-                                return "/qmlimages/BatteryOrange.svg"
+                                return "/qmlimages/BatteryCritical.svg"
                             } 
                         }
                     case MAVLink.MAV_BATTERY_CHARGE_STATE_LOW:
@@ -149,7 +149,7 @@ Item {
                             } else if (battery.percentRemaining.rawValue > threshold3) {
                                 return "/qmlimages/BatteryOrange.svg"
                             } else {
-                                return "/qmlimages/BatteryOrange.svg"
+                                return "/qmlimages/BatteryCritical.svg"
                             }
                         }
                     case MAVLink.MAV_BATTERY_CHARGE_STATE_CRITICAL:
@@ -406,7 +406,7 @@ Item {
                                 width: ScreenTools.defaultFontPixelWidth * 6
                                 height: width
                                 fillMode: Image.PreserveAspectFit
-                                color: qgcPal.colorOrange
+                                color: qgcPal.colorYellow
                             }
                             FactTextField {
                                 fact: _batterySettings.threshold3
