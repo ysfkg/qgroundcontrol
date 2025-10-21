@@ -19,7 +19,6 @@ Item {
     id:             control
     implicitWidth:  (compassRadius * 2) + attitudeSpacing + attitudeSize
     implicitHeight: implicitWidth
-    //visible: false
     property real attitudeSize:         rollIndicator.attitudeSize
     property real attitudeSpacing:      rollIndicator.attitudeSpacing
     property real extraInset:           attitudeSize + attitudeSpacing
@@ -30,6 +29,7 @@ Item {
     property real compassBorder:        ScreenTools.defaultFontPixelHeight / 2
     property var  vehicle:              globals.activeVehicle
     property var  qgcPal:               QGroundControl.globalPalette
+
 
     property real _totalAttitudeSize: attitudeSize + attitudeSpacing
 
