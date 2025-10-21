@@ -64,7 +64,7 @@ QString buildAngleCommand(const QString &axis, double angle, double speed)
 
     int speedVal = static_cast<int>(speed * 10.0);
     if (speedVal < 0) speedVal = 0;
-    if (speedVal > 255) speedVal = 255;
+    if (speedVal > 99) speedVal = 99;
     const QString speedHex = QString("%1").arg(speedVal, 2, 16, QLatin1Char('0')).toUpper();
 
     const QString payload = "#TPUG6w" + idBit + angleHex + speedHex;
