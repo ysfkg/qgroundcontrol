@@ -26,4 +26,5 @@
  
 *************************** v1.2.1 *********************** Üsttekiler ile birleştirildi  
 +Gimbal hareketleri düz pot ile çalışacak şekilde güncellendi, vehicle.cc dosyası  
++Kalan batarya göstergesi güncellendi  
 
