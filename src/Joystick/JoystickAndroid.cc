@@ -249,47 +249,7 @@ bool JoystickAndroid::handleGenericMotionEvent(jobject event)
         const float v = ev.callMethod<jfloat>("getAxisValue", "(I)F", axisCode[i]);
         axisValue[i] = static_cast<int>(v * 32767.f);
     }
-
-    qCritical() << "===******************************************************************** Android Joystick Axis 14 Debug ===********************************************************************";
-    // 15. kanal (index 14) değerini -90..90 dereceye çevirip UDP ile gönder
-    if (_axisCount > 14) {
-        const int raw = axisValue[14]; // -32767..32767
-
-        // Timer ilk kullanımda başlat
-        if (!s_udpTimer.isValid()) {
-            s_udpTimer.start();
-        }
-        
-        // Sadece kanal değeri değiştiğinde ve timer süresi dolduğunda gönder
-        const bool channelChanged = (std::fabs(raw - s_lastChannel14Value) >= 10);
-        const bool timerReady = (s_udpTimer.elapsed() >= 40); // 25 Hz için 40ms
-        
-        if (channelChanged && timerReady) {
-            s_lastChannel14Value = raw;
-            s_udpTimer.start();
-            
-            double adjusted = static_cast<double>(raw) / 32767.0; // -1..1
-            // Deadzone
-            if (std::fabs(adjusted) < 0.01) adjusted = 0.0;
-            double angleDeg = adjusted * 90.0; // -90..90
-            if (angleDeg < -90.0) angleDeg = -90.0;
-            if (angleDeg > 90.0)  angleDeg =  90.0;
-
-            // Hız: 1..10 arası örnek bir ölçekleme
-            const double speed = 1.0 + (std::fabs(adjusted) * 9.0);
-
-            const QString command = buildAngleCommand("pitch", angleDeg, speed);
-            if (!command.isEmpty()) {
-                if (!s_udpSocket) s_udpSocket = new QUdpSocket();
-                const QHostAddress targetAddress(QStringLiteral("192.168.144.108"));
-                const quint16 targetPort = 5000;
-                (void) s_udpSocket->writeDatagram(command.toUtf8(), targetAddress, targetPort);
-                
-                qDebug() << "UDP Komut Gönderildi - Kanal 15:" << raw << "Açı:" << angleDeg << "Hız:" << speed;
-            }
-        }
-    }
-
+    
     return true;
 }
 
