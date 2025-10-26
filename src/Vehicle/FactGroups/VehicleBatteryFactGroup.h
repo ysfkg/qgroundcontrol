@@ -62,8 +62,13 @@ class VehicleBatteryFactGroup : public FactGroup
     static void                     _handleHighLatency2         (Vehicle* vehicle, mavlink_message_t& message);
     static void                     _handleBatteryStatus        (Vehicle* vehicle, mavlink_message_t& message);
 
+    void _sendBatteryStatusToMAVLink();
+    QTimer* _batteryUpdateTimer;
+    static const int BATTERY_UPDATE_INTERVAL_MS = 1000; // 1 saniyede bir gönder
+
     bool _isFirstTime = true;
     double _initialRemainingBattCapacity = qQNaN();
+    bool _tenPercentTriggerFired = false;
 
     static VehicleBatteryFactGroup* _findOrAddBatteryGroupById  (Vehicle* vehicle, uint8_t batteryId);
 

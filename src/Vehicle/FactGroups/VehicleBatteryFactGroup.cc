@@ -12,6 +12,12 @@
 #include "Vehicle.h"
 #include "ParameterManager.h"
 
+#include "LinkInterface.h"  // QGC Link interface header
+#include "MAVLinkProtocol.h"
+#include <mavlink.h>   // veya doğru MAVLink versiyonuna göre path
+#include  "Vehicle.h"
+
+
 const char* VehicleBatteryFactGroup::_batteryFactGroupNamePrefix = "battery";
 
 VehicleBatteryFactGroup::VehicleBatteryFactGroup(uint8_t batteryId, Vehicle* vehicle, QObject* parent)
@@ -111,7 +117,7 @@ void VehicleBatteryFactGroup::_handleHighLatency2(Vehicle* vehicle, mavlink_mess
     group->_setTelemetryAvailable(true);
 }
 
-// VehicleBatteryFactGroup.cc dosyasına ekle:
+        // VehicleBatteryFactGroup.cc dosyasına ekle:
 void VehicleBatteryFactGroup::_printBatteryInfoToConsole(Vehicle* vehicle)
 {
 
@@ -158,21 +164,58 @@ void VehicleBatteryFactGroup::_handleBatteryStatus(Vehicle* vehicle, mavlink_mes
 
     double Consumed_mAh = (batteryStatus.current_consumed == -1  ?    qQNaN() : batteryStatus.current_consumed);
 
-    if (vehicle->parameterManager()->parameterExists(vehicle->id(), "BATT_LOW_VOLT")) {
-        double battLowVoltage = vehicle->parameterManager()->getParameter(-1, "BATT_LOW_VOLT")->rawValue().toDouble();
-        double battCapacity = vehicle->parameterManager()->getParameter(-1, "BATT_CAPACITY")->rawValue().toDouble();
-        double battmaxVoltage = vehicle->parameterManager()->getParameter(-1, "MOT_BAT_VOLT_MAX")->rawValue().toDouble();
-        double initialRemainingBattCapacity;
-        if (group->_isFirstTime) {
-            group->_initialRemainingBattCapacity = battCapacity * (totalVoltage - battLowVoltage) / (battmaxVoltage/1.003 - battLowVoltage);
+            // Only attempt to read parameters once the parameter manager reports ready
+    ParameterManager* paramMgr = vehicle->parameterManager();
+    if (!paramMgr->parametersReady()) {
+        return;
+    }
+
+    const int compId = ParameterManager::defaultComponentId;
+    if (paramMgr->parameterExists(compId, "BATT_LOW_VOLT") &&
+        paramMgr->parameterExists(compId, "BATT_CAPACITY") &&
+        paramMgr->parameterExists(compId, "MOT_BAT_VOLT_MAX")) {
+        const double battLowVoltage = paramMgr->getParameter(compId, "BATT_LOW_VOLT")->rawValue().toDouble();
+        const double battCapacity   = paramMgr->getParameter(compId, "BATT_CAPACITY")->rawValue().toDouble();
+        const double battmaxVoltage = paramMgr->getParameter(compId, "MOT_BAT_VOLT_MAX")->rawValue().toDouble();
+
+        const double denomVoltage = (battmaxVoltage / 1.003) - battLowVoltage;
+        if (group->_isFirstTime && denomVoltage > 0.0 && !qIsNaN(totalVoltage)) {
+            group->_initialRemainingBattCapacity = Consumed_mAh + battCapacity * (totalVoltage - battLowVoltage) / denomVoltage;
             group->_isFirstTime = false;
         }
-        double currentRemainingBattCapacity = group->_initialRemainingBattCapacity - Consumed_mAh;
-        double percentRemaining = 100 * currentRemainingBattCapacity / battCapacity;
 
-        group->percentRemaining()->setRawValue   (percentRemaining);
-        vehicle->parameterManager()->getParameter(-1, "BATT_CAPACITY")->setRawValue(5000);
-        //qDebug() << "Initial battery capacity calculated:" << group->_initialRemainingBattCapacity;
+                // One-time 10% threshold trigger: when totalVoltage approaches (battLowVoltage + 10% of (battmaxVoltage - battLowVoltage)) within 1%
+        if (!group->_tenPercentTriggerFired && !qIsNaN(totalVoltage)) {
+            const double diff = battmaxVoltage - battLowVoltage;
+            if (diff > 0.0) {
+                const double threshold = battLowVoltage + 0.10 * diff;
+                const double tol = 0.01 * diff; // 1% of the difference
+                if (qAbs(totalVoltage - threshold) <= tol) {
+                    group->_initialRemainingBattCapacity = Consumed_mAh + battCapacity*0.1;
+                    group->percentRemaining()->setRawValue(10);
+                    group->_tenPercentTriggerFired = true;
+                }
+            }
+        }
+
+        if (battCapacity > 0.0 && !qIsNaN(group->_initialRemainingBattCapacity) && !qIsNaN(Consumed_mAh)) {
+            double currentRemainingBattCapacity = group->_initialRemainingBattCapacity - Consumed_mAh;
+            double percentRemaining = 100.0 * currentRemainingBattCapacity / battCapacity;
+            if (!qIsNaN(percentRemaining)) {
+                if (percentRemaining < 0.0) percentRemaining = 0.0;
+                if (percentRemaining > 100.0) percentRemaining = 100.0;
+                group->percentRemaining()->setRawValue(percentRemaining);
+            }
+        }
+
+
+
+
+
+
+
+
+
     }
 
 }

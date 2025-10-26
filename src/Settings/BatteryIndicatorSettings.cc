@@ -37,6 +37,15 @@ DECLARE_SETTINGSFACT_NO_FUNC(BatteryIndicatorSettings, threshold2)
     return _threshold2Fact;
 }
 
+DECLARE_SETTINGSFACT_NO_FUNC(BatteryIndicatorSettings, threshold3)
+{
+    if (!_threshold3Fact) {
+        _threshold3Fact = _createSettingsFact(threshold3Name);
+        connect(_threshold3Fact, &SettingsFact::rawValueChanged, this, &BatteryIndicatorSettings::_threshold3Changed);
+    }
+    return _threshold3Fact;
+}
+
 // Change handlers for thresholds
 void BatteryIndicatorSettings::_threshold1Changed() {
     validateThreshold1(); // Call validation when threshold1 value changes
@@ -44,6 +53,10 @@ void BatteryIndicatorSettings::_threshold1Changed() {
 
 void BatteryIndicatorSettings::_threshold2Changed() {
     validateThreshold2(); // Call validation when threshold2 value changes
+}
+
+void BatteryIndicatorSettings::_threshold3Changed() {
+    validateThreshold3(); // Call validation when threshold3 value changes
 }
 
 // Validate threshold1 value
@@ -56,6 +69,12 @@ void BatteryIndicatorSettings::validateThreshold1() {
 void BatteryIndicatorSettings::validateThreshold2() {
     int value = threshold2()->rawValue().toInt();
     setThreshold2(value); // Call the setter with the current value
+}
+
+// Validate threshold3 value
+void BatteryIndicatorSettings::validateThreshold3() {
+    int value = threshold3()->rawValue().toInt();
+    setThreshold3(value); // Call the setter with the current value
 }
 
 // Set threshold1 with validation
@@ -84,11 +103,28 @@ void BatteryIndicatorSettings::setThreshold2(int value) {
         return;
     }
 
-    // Check if value is less than threshold1
+            // Check if value is less than threshold1
     if (value < threshold1()->rawValue().toInt()) {
         threshold2()->setRawValue(value);
     } else {
         // Ensure threshold2 is less than threshold1
         threshold2()->setRawValue(threshold1()->rawValue().toInt() - 1);
+    }
+}
+
+// Set threshold3 with validation
+void BatteryIndicatorSettings::setThreshold3(int value) {
+    // Ensure value is greater than 15
+    if (value <= 15) {
+        threshold3()->setRawValue(16); // Adjust to the minimum valid value
+        return;
+    }
+
+            // Check if value is less than threshold2
+    if (value < threshold2()->rawValue().toInt()) {
+        threshold3()->setRawValue(value);
+    } else {
+        // Ensure threshold3 is less than threshold2
+        threshold3()->setRawValue(threshold2()->rawValue().toInt() - 1);
     }
 }

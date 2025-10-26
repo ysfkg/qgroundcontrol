@@ -44,6 +44,7 @@ GstVideoReceiver::GstVideoReceiver(QObject* parent)
       , _recording(false)
       , _removingDecoder(false)
       , _removingRecorder(false)
+      , _recordingFrameCount(0)
       , _source(nullptr)
       , _tee(nullptr)
       , _decoderValve(nullptr)
@@ -164,11 +165,12 @@ GstVideoReceiver::start(const QString& uri, unsigned timeout, int buffer)
             break;
         }
 
+        // Recording queue: Yeterli buffer ve leak yok
         g_object_set(recorderQueue,
-                     "leaky", 2,
-                     "max-size-buffers", 1,
-                     "max-size-bytes", 0,
-                     "max-size-time", (guint64)0,
+                     "leaky", 0,                        // NO LEAK! Tüm buffer'ları tut
+                     "max-size-buffers", 100,           // 100 buffer (~20fps × 5 saniye)
+                     "max-size-bytes", 0,               // Sınırsız byte
+                     "max-size-time", (guint64)5000000000,  // 5 saniye
                      NULL);
 
 
@@ -584,39 +586,56 @@ GstVideoReceiver::startRecording(const QString& videoFile, FILE_FORMAT format)
         gst_object_unref(valveSrcPad);
     }
 
+            // Recording branch için direct link (PTS olmasa da Matroska tolerans gösterir)
+    GstPad* probePad = nullptr;
 
-    if (!gst_element_link(_recorderValve, _fileSink)) {
-        qCCritical(VideoReceiverLog) << "Failed to link valve and file sink" << _uri;
+            // Valve'in çıkışına probe ekle (keyframe kontrolü için)
+    if ((probePad = gst_element_get_static_pad(_recorderValve, "src")) == nullptr) {
+        qCCritical(VideoReceiverLog) << "gst_element_get_static_pad() failed for valve src pad" << _uri;
         _dispatchSignal([this](){
             emit onStartRecordingComplete(STATUS_FAIL);
         });
         return;
     }
+
+    // Tek probe: hem keyframe kontrolü hem PTS ekleme
+    gulong probeId = gst_pad_add_probe(probePad, GST_PAD_PROBE_TYPE_BUFFER, _recordingProbe, this, nullptr);
+    qCCritical(VideoReceiverLog) << "Added recording probe with ID:" << probeId;
+    
+    // Valve pad'in durumunu kontrol et
+    GstCaps* valveCaps = gst_pad_get_current_caps(probePad);
+    if (valveCaps) {
+        gchar* capsStr = gst_caps_to_string(valveCaps);
+        qCCritical(VideoReceiverLog) << "Valve src pad caps:" << capsStr;
+        g_free(capsStr);
+        gst_caps_unref(valveCaps);
+    } else {
+        qCCritical(VideoReceiverLog) << "WARNING: Valve src pad has no caps yet";
+    }
+    
+    gst_object_unref(probePad);
+    probePad = nullptr;
+
+    qCCritical(VideoReceiverLog) << "Linking valve to fileSink...";
+    if (!gst_element_link(_recorderValve, _fileSink)) {
+        qCCritical(VideoReceiverLog) << "Failed to link valve ➔ file sink" << _uri;
+        _dispatchSignal([this](){
+            emit onStartRecordingComplete(STATUS_FAIL);
+        });
+        return;
+    }
+    qCCritical(VideoReceiverLog) << "Successfully linked valve to fileSink";
 
     gst_element_sync_state_with_parent(_fileSink);
 
     GST_DEBUG_BIN_TO_DOT_FILE(GST_BIN(_pipeline), GST_DEBUG_GRAPH_SHOW_ALL, "pipeline-with-filesink");
 
-            // Install a probe on the recording branch to drop buffers until we hit our first keyframe
-            // When we hit our first keyframe, we can offset the timestamps appropriately according to the first keyframe time
-            // This will ensure the first frame is a keyframe at t=0, and decoding can begin immediately on playback
-    GstPad* probepad;
-
-    if ((probepad  = gst_element_get_static_pad(_recorderValve, "src")) == nullptr) {
-        qCCritical(VideoReceiverLog) << "gst_element_get_static_pad() failed" << _uri;
-        _dispatchSignal([this](){
-            emit onStartRecordingComplete(STATUS_FAIL);
-        });
-        return;
-    }
-
-    gst_pad_add_probe(probepad, GST_PAD_PROBE_TYPE_BUFFER, _keyframeWatch, this, nullptr); // to drop the buffers until key frame is received
-    gst_object_unref(probepad);
-    probepad = nullptr;
-
     g_object_set(_recorderValve, "drop", FALSE, nullptr);
 
     _recording = true;
+    _recordingFrameCount = 0;  // Reset frame counter
+    _recordingStartTime = 0;   // Will be set from first frame
+    _lastFrameTimestamp = 0;
     qCCritical(VideoReceiverLog) << "Recording started" << _uri;
     _dispatchSignal([this](){
         emit onStartRecordingComplete(STATUS_OK);
@@ -654,8 +673,6 @@ GstVideoReceiver::stopRecording(void)
 
     bool ret = _unlinkBranch(_recorderValve);
 
-            // FIXME: AV: it is much better to emit onStopRecordingComplete() after recording is really stopped
-            // (which happens later due to async design) but as for now it is also not so bad...
     _dispatchSignal([this, ret](){
         emit onStopRecordingComplete(ret ? STATUS_OK : STATUS_FAIL);
     });
@@ -771,8 +788,8 @@ void GstVideoReceiver::takeScreenshot(const QString& imageFile)
 
 const char* GstVideoReceiver::_kFileMux[FILE_FORMAT_MAX - FILE_FORMAT_MIN] = {
     "matroskamux",
-    "qtmux",
-    "mp4mux"
+    "matroskamux",
+    "matroskamux"
 };
 
 void
@@ -1137,6 +1154,17 @@ GstVideoReceiver::_makeFileSink(const QString& videoFile, FILE_FORMAT format)
         if ((mux = gst_element_factory_make(_kFileMux[format - FILE_FORMAT_MIN], nullptr)) == nullptr) {
             qCCritical(VideoReceiverLog) << "gst_element_factory_make('" << _kFileMux[format - FILE_FORMAT_MIN] << "') failed";
             break;
+        }
+
+        // Matroska muxer için seeking ayarları
+        if (format == FILE_FORMAT_MKV || format == FILE_FORMAT_MOV || format == FILE_FORMAT_MP4) {
+            g_object_set(mux,
+                         "streamable", FALSE,              // Dosya sonunda index yaz (seeking için)
+                         "writing-app", "QGroundControl",  // App bilgisi
+                         "min-index-interval", 0,          // Her keyframe'de index (max seeking doğruluğu)
+                         "max-cluster-duration", 2000000000, // 2 saniye cluster (seeking için)
+                         nullptr);
+            qCCritical(VideoReceiverLog) << "Configured matroskamux with seeking support";
         }
 
         if ((sink = gst_element_factory_make("filesink", nullptr)) == nullptr) {
@@ -1888,27 +1916,152 @@ GstVideoReceiver::_eosProbe(GstPad* pad, GstPadProbeInfo* info, gpointer user_da
 GstPadProbeReturn
 GstVideoReceiver::_keyframeWatch(GstPad* pad, GstPadProbeInfo* info, gpointer user_data)
 {
+    Q_UNUSED(pad);
+
     if (info == nullptr || user_data == nullptr) {
         qCCritical(VideoReceiverLog) << "Invalid arguments";
         return GST_PAD_PROBE_DROP;
     }
 
+    GstVideoReceiver* pThis = static_cast<GstVideoReceiver*>(user_data);
+
+    // Eğer kayıt başlamadıysa hemen çık
+    if (!pThis->_recording) {
+        return GST_PAD_PROBE_PASS;
+    }
+
     GstBuffer* buf = gst_pad_probe_info_get_buffer(info);
 
-    if (GST_BUFFER_FLAG_IS_SET(buf, GST_BUFFER_FLAG_DELTA_UNIT)) { // wait for a keyframe
+    // İlk keyframe'i bekle
+    if (pThis->_recordingFrameCount == 0) {
+        if (GST_BUFFER_FLAG_IS_SET(buf, GST_BUFFER_FLAG_DELTA_UNIT)) {
+            // Keyframe değil, at
+            qCCritical(VideoReceiverLog) << "Dropping non-keyframe (waiting for first keyframe)";
+            return GST_PAD_PROBE_DROP;
+        }
+
+        // İlk keyframe bulundu!
+        if (GST_BUFFER_PTS_IS_VALID(buf)) {
+            qCCritical(VideoReceiverLog) << "Got first keyframe with PTS:" << GST_BUFFER_PTS(buf);
+        } else {
+            qCCritical(VideoReceiverLog) << "Got first keyframe (no PTS, will be added by probe)";
+        }
+
+        qCCritical(VideoReceiverLog) << "Recording started, passing all buffers now";
+
+        pThis->_dispatchSignal([pThis]() {
+            pThis->recordingStarted();
+        });
+    } else {
+        // Debug: Her 20 frame'de bir log
+        if (pThis->_recordingFrameCount % 20 == 0) {
+            qCCritical(VideoReceiverLog) << "Passing frame" << pThis->_recordingFrameCount;
+        }
+    }
+
+    // İlk keyframe'den sonra tüm buffer'ları geçir
+    return GST_PAD_PROBE_PASS;
+}
+
+GstPadProbeReturn
+GstVideoReceiver::_recordingProbe(GstPad* pad, GstPadProbeInfo* info, gpointer user_data)
+{
+    Q_UNUSED(pad);
+
+    if (info == nullptr || user_data == nullptr) {
+        qCCritical(VideoReceiverLog) << "[PROBE] Called but info or user_data is null";
         return GST_PAD_PROBE_DROP;
     }
 
-            // set media file '0' offset to current timeline position - we don't want to touch other elements in the graph, except these which are downstream!
-    gst_pad_set_offset(pad, -static_cast<gint64>(buf->pts));
-
     GstVideoReceiver* pThis = static_cast<GstVideoReceiver*>(user_data);
 
-    qCCritical(VideoReceiverLog) << "Got keyframe, stop dropping buffers";
+    // Kayıt başlamadıysa işlem yapma
+    if (!pThis->_recording) {
+        // Kayıt başlamadan önce probe çalışıyor, bu normal
+        return GST_PAD_PROBE_PASS;
+    }
+    
+    // İlk buffer'da log
+    if (pThis->_recordingFrameCount == 0) {
+        qCCritical(VideoReceiverLog) << "[PROBE] First buffer received for recording";
+    }
 
-    pThis->_dispatchSignal([pThis]() {
-        pThis->recordingStarted();
-    });
+    GstBuffer* buf = gst_pad_probe_info_get_buffer(info);
+    if (buf == nullptr) {
+        return GST_PAD_PROBE_DROP;
+    }
 
-    return GST_PAD_PROBE_REMOVE;
+    // 1. KEYFRAME KONTROLÜ: İlk frame mutlaka keyframe olmalı
+    if (pThis->_recordingFrameCount == 0) {
+        if (GST_BUFFER_FLAG_IS_SET(buf, GST_BUFFER_FLAG_DELTA_UNIT)) {
+            // Keyframe değil, at
+            qCCritical(VideoReceiverLog) << "Dropping non-keyframe (waiting for first keyframe)";
+            return GST_PAD_PROBE_DROP;
+        }
+
+        // İlk keyframe bulundu!
+        qCCritical(VideoReceiverLog) << "Got first keyframe, starting recording";
+
+        pThis->_dispatchSignal([pThis]() {
+            pThis->recordingStarted();
+        });
+    }
+
+    // 2. PTS İŞLEMİ: Buffer'ı writable yap
+    buf = gst_buffer_make_writable(buf);
+    if (buf == nullptr) {
+        return GST_PAD_PROBE_DROP;
+    }
+
+    // 3. PTS OLUŞTURMA: Gerçek zamana göre hesapla (wallclock)
+    // Sorun: Kaynak PTS'ler güvenilmez, sabit framerate varsayımı yanlış olabilir
+    // Çözüm: Her frame için gerçek geçen zamanı kullan
+    
+    GstClockTime currentTime = g_get_monotonic_time() * 1000; // microseconds → nanoseconds
+    
+    // İlk frame'de başlangıç zamanını kaydet
+    if (pThis->_recordingStartTime == 0) {
+        pThis->_recordingStartTime = currentTime;
+        qCCritical(VideoReceiverLog) << "Recording start time set:" << pThis->_recordingStartTime;
+    }
+    
+    // PTS = başlangıçtan bu yana geçen zaman
+    GstClockTime pts = currentTime - pThis->_recordingStartTime;
+    
+    // Duration = önceki frame'den bu yana geçen zaman
+    GstClockTime duration = 0;
+    if (pThis->_recordingFrameCount > 0 && pThis->_lastFrameTimestamp > 0) {
+        duration = pts - pThis->_lastFrameTimestamp;
+    } else {
+        duration = GST_SECOND / 20; // İlk frame için varsayılan 50ms
+    }
+    
+    GST_BUFFER_PTS(buf) = pts;
+    GST_BUFFER_DTS(buf) = pts;
+    GST_BUFFER_DURATION(buf) = duration;
+    
+    pThis->_lastFrameTimestamp = pts;
+    
+    // Debug: İlk 10 frame için log
+    if (pThis->_recordingFrameCount < 10) {
+        qCCritical(VideoReceiverLog) << "Frame" << pThis->_recordingFrameCount 
+                                     << ": PTS =" << pts << "ns (" << (pts / GST_MSECOND) << "ms)"
+                                     << " Duration =" << duration << "ns (" << (duration / GST_MSECOND) << "ms)";
+    }
+
+    pThis->_recordingFrameCount++;
+
+    // Debug: Her 100 frame'de bir (gerçek süre ve ortalama FPS)
+    if (pThis->_recordingFrameCount % 100 == 0) {
+        double realTimeSec = pts / (double)GST_SECOND;
+        double avgFps = pThis->_recordingFrameCount / realTimeSec;
+        qCCritical(VideoReceiverLog) << "Recording frame count:" << pThis->_recordingFrameCount 
+                                     << "Real time:" << realTimeSec << "s"
+                                     << "Avg FPS:" << avgFps;
+    }
+
+    // Değiştirilmiş buffer'ı geri yaz
+    GST_PAD_PROBE_INFO_DATA(info) = buf;
+
+    return GST_PAD_PROBE_PASS;
 }

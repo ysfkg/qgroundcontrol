@@ -129,12 +129,16 @@ class GstVideoReceiver : public VideoReceiver
     static GstPadProbeReturn _videoSinkProbe(GstPad* pad, GstPadProbeInfo* info, gpointer user_data);
     static GstPadProbeReturn _eosProbe(GstPad* pad, GstPadProbeInfo* info, gpointer user_data);
     static GstPadProbeReturn _keyframeWatch(GstPad* pad, GstPadProbeInfo* info, gpointer user_data);
+    static GstPadProbeReturn _recordingProbe(GstPad* pad, GstPadProbeInfo* info, gpointer user_data);
 
     bool                _streaming;
     bool                _decoding;
     bool                _recording;
     bool                _removingDecoder;
     bool                _removingRecorder;
+    gint64              _recordingFrameCount;  // Frame counter for PTS generation
+    GstClockTime        _recordingStartTime;   // Recording start timestamp
+    GstClockTime        _lastFrameTimestamp;   // Last frame timestamp for duration calculation
     GstElement*         _source;
     GstElement*         _tee;
     GstElement*         _decoderValve;

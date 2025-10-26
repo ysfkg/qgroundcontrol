@@ -675,6 +675,7 @@ ApplicationWindow {
 
     Popup {
         id:             indicatorDrawer
+        parent:         Overlay.overlay
         x:              calcXPosition()
         y:              ScreenTools.toolbarHeight + _margins
         leftInset:      0
