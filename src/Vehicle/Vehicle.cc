@@ -1507,54 +1507,37 @@ void Vehicle::_handleRCChannels(mavlink_message_t& message)
             pwmValues[i] = -1;
         }
     }
-    // 16. Kanal Değerini Al, gimbal YAW ekseni pitch
-    /*int channel16Yaw = pwmValues[15];
-    static double angleYaw = 0;
-    if (std::abs(channel16Yaw - 1500) > 5) {
-        if (angleYaw >= -90.0 && angleYaw <= 90.0) {
-            angleYaw += (channel16Yaw - 1500) / 20;
-        }
-        if(angleYaw <= -90.0 ) {
-            angleYaw = -90.0;
-        }else if(angleYaw >= 90.0){
-            angleYaw = 90.0;
-        }
-        //qDebug() << "yaw Kanal Yeni Değer:" << angleYaw;
-        // "yaw" ekseni için komut oluşturuluyor.
-        double speed = 1 + (std::abs(channel16Yaw - 1500) / 33.5);
+
+    int channel16Yaw = pwmValues[15];
+    double angleYaw = 0;
+        angleYaw = (channel16Yaw - 1500) / 5;  // Artış oranı – joystick hassasiyeti
+
+
+        double speed = 1;
         QString command = buildAngleCommand("yaw", angleYaw, speed);
+
         if (!command.isEmpty()) {
-            QHostAddress targetAddress("192.168.144.108");  // Hedef IP (örnekte Python kodundakine uyarlanmış)
+            QHostAddress targetAddress("192.168.144.108");  // Hedef IP
             quint16 targetPort = 5000;
             _udpSocket->writeDatagram(command.toUtf8(), targetAddress, targetPort);
-
         }
-    }
 
-    // 15. Kanal Değerini Al, gimbal PITCH ekseni
+
     int channel16Pitch = pwmValues[14];
-    static double anglePitch = 0;
-    if (std::abs(channel16Pitch - 1500) > 5) {
-        if (anglePitch >= -90.0 && anglePitch <= 90.0) {
-            anglePitch += (channel16Pitch - 1500) / 20;
-        }
-        if(anglePitch <= -90.0 ) {
-            anglePitch = -90.0;
-        }else if(anglePitch >= 90.0){
-            anglePitch = 90.0;
-        }
-        //qDebug() << "pitch Kanal Yeni Değer:" << anglePitch;
-        // "Pitch" ekseni için komut oluşturuluyor.
-        double speed = 1 + (std::abs(channel16Pitch - 1500) / 33.5);
-        QString command = buildAngleCommand("pitch", anglePitch, speed);
-        if (!command.isEmpty()) {
-            //qDebug() << "pitch Kanal Yeni Değer:" << anglePitch;
-            QHostAddress targetAddress("192.168.144.108");  // Hedef IP (örnekte Python kodundakine uyarlanmış)
-            quint16 targetPort = 5000;
-            _udpSocket->writeDatagram(command.toUtf8(), targetAddress, targetPort);
-        }
-    }
 
+        angleYaw = (channel16Pitch - 1500) / 5;  // Artış oranı – joystick hassasiyeti
+
+
+        QString command1 = buildAngleCommand("pitch", angleYaw, speed);
+
+        if (!command1.isEmpty()) {
+            QHostAddress targetAddress("192.168.144.108");  // Hedef IP
+            quint16 targetPort = 5000;
+            _udpSocket->writeDatagram(command1.toUtf8(), targetAddress, targetPort);
+        }
+
+
+/*
     static int lastPwm11 = -1;
     // kanal 11
     if(qAbs(pwmValues[10] - lastPwm11) > 10){
@@ -1575,7 +1558,7 @@ void Vehicle::_handleRCChannels(mavlink_message_t& message)
     if(qAbs(pwmValues[13] - lastPwm14) > 10){
         lastPwm14 = pwmValues[13];
         QString command1 = buildAngleCommand("yaw", 0, 8);
-        QString command2 = buildAngleCommand("pitch", 0, 8);
+        QString command2 = buildAngleCommand("pitch", -20, 8);
         if (!command1.isEmpty()) {
             QHostAddress targetAddress("192.168.144.108");  // Hedef IP (örnekte Python kodundakine uyarlanmış)
             quint16 targetPort = 5000;                        // Hedef port (varsayılan 5000)
@@ -1584,7 +1567,7 @@ void Vehicle::_handleRCChannels(mavlink_message_t& message)
         }
 
     }
-    */
+*/
 
     emit remoteControlRSSIChanged(channels.rssi);
     emit rcChannelsChanged(channels.chancount, pwmValues);

@@ -193,6 +193,47 @@ Item {
             isViewer3DOpen:         viewer3DWindow.isOpen
         }
 
+        // Sanal joystick - tam ekranda da görünür
+        Loader {
+            id:                         virtualJoystickFullScreen
+            z:                          QGroundControl.zOrderTopMost + 1
+            anchors.right:              parent.right
+            anchors.rightMargin:         ScreenTools.defaultFontPixelWidth * 0.75
+            height:                      Math.min(parent.height * 0.25, ScreenTools.defaultFontPixelWidth * 16)
+            visible:                     _virtualJoystickEnabled && !(_activeVehicle ? _activeVehicle.usingHighLatencyLink : false) && (QGroundControl.videoManager.fullScreen || QGroundControl.videoManager.fullScreen1)
+            anchors.bottom:              parent.bottom
+            anchors.bottomMargin:        ScreenTools.defaultFontPixelHeight * 1.5
+            anchors.left:                parent.left
+            anchors.leftMargin:          ScreenTools.defaultFontPixelWidth * 0.75
+            source:                     "qrc:/qml/VirtualJoystick.qml"
+            active:                      _virtualJoystickEnabled && !(_activeVehicle ? _activeVehicle.usingHighLatencyLink : false) && (QGroundControl.videoManager.fullScreen || QGroundControl.videoManager.fullScreen1)
+
+            property bool autoCenterThrottle:      QGroundControl.settingsManager.appSettings.virtualJoystickAutoCenterThrottle.rawValue
+            property bool _virtualJoystickEnabled: QGroundControl.settingsManager.appSettings.virtualJoystick.rawValue
+            property real rootWidth:     parent.width
+            property real itemX:        virtualJoystickFullScreen.x
+
+            onRootWidthChanged: virtualJoystickFullScreen.status == Loader.Ready && visible ? virtualJoystickFullScreen.item.uiTotalWidth = rootWidth : undefined
+            onItemXChanged:     virtualJoystickFullScreen.status == Loader.Ready && visible ? virtualJoystickFullScreen.item.uiRealX = itemX : undefined
+
+            onLoaded: {
+                if (virtualJoystickFullScreen.visible) {
+                    virtualJoystickFullScreen.item.calibration = true
+                    virtualJoystickFullScreen.item.uiTotalWidth = rootWidth
+                    virtualJoystickFullScreen.item.uiRealX = itemX
+                } else {
+                    virtualJoystickFullScreen.item.calibration = false
+                }
+            }
+
+            // Joystick'in konumunu hesapla
+            onHeightChanged: {
+                if (virtualJoystickFullScreen.status == Loader.Ready && virtualJoystickFullScreen.visible) {
+                    virtualJoystickFullScreen.item.uiRealX = itemX
+                }
+            }
+        }
+
 
 
         FlyViewCustomLayer {
