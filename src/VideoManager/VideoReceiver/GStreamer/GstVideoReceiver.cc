@@ -55,6 +55,7 @@ GstVideoReceiver::GstVideoReceiver(QObject* parent)
       , _pipeline(nullptr)
       , _lastSourceFrameTime(0)
       , _lastVideoFrameTime(0)
+      , _errorDetected(false)
       , _resetVideoSink(true)
       , _videoSinkProbeId(0)
       , _udpReconnect_us(5000000)
@@ -127,6 +128,7 @@ GstVideoReceiver::start(const QString& uri, unsigned timeout, int buffer)
         }
 
         _lastSourceFrameTime = 0;
+        _errorDetected = false;  // Error flag'i temizle - yeni stream başlıyor
 
         _teeProbeId = gst_pad_add_probe(pad, GST_PAD_PROBE_TYPE_BUFFER, _teeProbe, this, nullptr);
         gst_object_unref(pad);
@@ -137,19 +139,15 @@ GstVideoReceiver::start(const QString& uri, unsigned timeout, int buffer)
             break;
         }
 
-                // DEĞİŞTİRDİM2
-        /*g_object_set(decoderQueue,
-                     "leaky", 2,                        // downstream
-                     "max-size-buffers", 1,
-                     "max-size-bytes", 0,
-                     "max-size-time", (guint64)0,
-                     NULL);*/
+        // Decoder queue: Paket kaybında eski frame'leri at, yeni frame'leri göster
         g_object_set(decoderQueue,
-                     "leaky", 0,                        // downstream
-                     "max-size-buffers", 3,
-                     "max-size-bytes", 0,
-                     "max-size-time", (guint64)100000000,
+                     "leaky", 2,                        // downstream - en eski paketleri at
+                     "max-size-buffers", 50,            // 50 buffer (~2.5 saniye @ 20fps)
+                     "max-size-bytes", 10485760,        // 10MB max
+                     "max-size-time", (guint64)2000000000,  // 2 saniye
+                     "flush-on-eos", TRUE,              // EOS'da temizle
                      NULL);
+        qCDebug(VideoReceiverLog) << "Decoder queue configured: leaky mode, 50 buffers, 2s";
 
 
 
@@ -317,6 +315,9 @@ GstVideoReceiver::stop(void)
         return;
     }
 
+    // Error flag'i reset et
+    _errorDetected = false;
+
     qCCritical(VideoReceiverLog) << "Stopping" << _uri;
 
     if (_teeProbeId != 0) {
@@ -365,6 +366,18 @@ GstVideoReceiver::stop(void)
             qCCritical(VideoReceiverLog) << "gst_pipeline_get_bus() failed";
         }
 
+        // Önce PAUSED'a geç - temiz RTSP TEARDOWN için
+        qCDebug(VideoReceiverLog) << "Setting pipeline to PAUSED for clean shutdown";
+        gst_element_set_state(_pipeline, GST_STATE_PAUSED);
+        
+        // PAUSED state'ine geçişi bekle (max 2 saniye)
+        GstStateChangeReturn ret = gst_element_get_state(_pipeline, nullptr, nullptr, 2 * GST_SECOND);
+        if (ret == GST_STATE_CHANGE_FAILURE) {
+            qCWarning(VideoReceiverLog) << "Failed to pause pipeline, forcing NULL state";
+        }
+        
+        // Şimdi NULL'a geç - RTSP TEARDOWN mesajı gönderilecek
+        qCDebug(VideoReceiverLog) << "Setting pipeline to NULL";
         gst_element_set_state(_pipeline, GST_STATE_NULL);
 
                 // FIXME: check if branch is connected and remove all elements from branch
@@ -806,12 +819,32 @@ GstVideoReceiver::_watchdog(void)
             _lastSourceFrameTime = now;
         }
 
+        // Timeout kontrolü
         if (now - _lastSourceFrameTime > _timeout) {
-            qCCritical(VideoReceiverLog) << "Stream timeout, no frames for " << now - _lastSourceFrameTime << "" << _uri;
-            _dispatchSignal([this](){
-                emit timeout();
-            });
-            stop();
+            if (_recording) {
+                // Kayıt yapılırken timeout - bozuk dosya oluşmasını engelle
+                qCCritical(VideoReceiverLog) << "===== STREAM TIMEOUT (RECORDING) =====";
+                qCCritical(VideoReceiverLog) << "No frames for " << now - _lastSourceFrameTime << " seconds while recording";
+                qCCritical(VideoReceiverLog) << "URI:" << _uri;
+                qCCritical(VideoReceiverLog) << "Stopping to prevent corrupted recording file";
+                _dispatchSignal([this](){
+                    emit timeout();
+                });
+                stop();
+            } else if (_errorDetected) {
+                // Error tespit edildi ve 10 saniye geçti, restart et
+                qCCritical(VideoReceiverLog) << "===== RESTARTING AFTER ERROR (10s timeout) =====";
+                qCCritical(VideoReceiverLog) << "Error detected " << now - _lastSourceFrameTime << " seconds ago";
+                qCCritical(VideoReceiverLog) << "No frames recovered - restarting stream";
+                _errorDetected = false;
+                _dispatchSignal([this](){
+                    emit timeout();
+                });
+                stop();
+            } else {
+                // Normal timeout, görüntüleme - devam et
+                qCDebug(VideoReceiverLog) << "Stream timeout but not recording - keeping stream alive (no frames for " << now - _lastSourceFrameTime << "s)";
+            }
         }
 
         if (_decoding && !_removingDecoder) {
@@ -819,12 +852,19 @@ GstVideoReceiver::_watchdog(void)
                 _lastVideoFrameTime = now;
             }
 
+            // Video decoder timeout da sadece kayıt yapılırken aktif
             if (now - _lastVideoFrameTime > _timeout * 2) {
-                qCCritical(VideoReceiverLog) << "Video decoder timeout, no frames for " << now - _lastVideoFrameTime << " " << _uri;
-                _dispatchSignal([this](){
-                    emit timeout();
-                });
-                stop();
+                if (_recording) {
+                    qCCritical(VideoReceiverLog) << "Decoder timeout during recording, no frames for " << now - _lastVideoFrameTime << " " << _uri;
+                    qCCritical(VideoReceiverLog) << "Stopping to prevent corrupted recording file";
+                    _dispatchSignal([this](){
+                        emit timeout();
+                    });
+                    stop();
+                } else {
+                    qCDebug(VideoReceiverLog) << "Decoder timeout but not recording - keeping decoder alive (no frames for " << now - _lastVideoFrameTime << "s)";
+                    // Timeout olsun ama decoder'ı durdurma
+                }
             }
         }
     });
@@ -837,8 +877,20 @@ GstVideoReceiver::_handleEOS(void)
         return;
     }
 
+    qCCritical(VideoReceiverLog) << "Handle EOS - Recording:" << _recording << " EndOfStream:" << _endOfStream;
+
     if (_endOfStream) {
-        stop();
+        // Stream gerçekten sona erdi
+        if (_recording) {
+            qCCritical(VideoReceiverLog) << "End of stream during recording - stopping to prevent corrupted file";
+            stop();
+        } else {
+            // Sadece görüntüleme - error flag'ini set et, 10 saniye bekle
+            qCCritical(VideoReceiverLog) << "End of stream detected during playback";
+            qCCritical(VideoReceiverLog) << "Setting error flag, will wait 10 seconds for recovery";
+            _errorDetected = true;
+            _lastSourceFrameTime = QDateTime::currentSecsSinceEpoch(); // Timer'ı başlat
+        }
     } else {
         if(_decoding && _removingDecoder) {
             _shutdownDecodingBranch();
@@ -932,25 +984,41 @@ GstVideoReceiver::_makeSource(const QString& uri)
 
         if(isTcpMPEGTS) {
             if ((source = gst_element_factory_make("tcpclientsrc", "source")) != nullptr) {
-                g_object_set(static_cast<gpointer>(source), "host", qPrintable(url.host()), "port", url.port(), nullptr);
+                g_object_set(static_cast<gpointer>(source), 
+                             "host", qPrintable(url.host()), 
+                             "port", url.port(),
+                             "timeout", 20,  // 20 saniye bağlantı timeout
+                             NULL);
+                qCDebug(VideoReceiverLog) << "TCP source configured with 20s timeout";
             }
         } else if (isRtsp) {
             if ((source = gst_element_factory_make("rtspsrc", "source")) != nullptr) {
                 g_object_set(static_cast<gpointer>(source),
                              "location", qPrintable(uri),
-                             "latency", 0,
+                             "latency", 1000,  // 1000ms buffer - kesintilere ve paket kaybına karşı güçlü tampon
                              "udp-reconnect", 1,
                              "timeout", _udpReconnect_us,
-                             "drop-on-latency", TRUE,
+                             "drop-on-latency", FALSE,  // Asla frame drop etme
                              "ntp-sync", FALSE,
-                             "do-retransmission", FALSE,
-                             "buffer-mode", 0,
-                             "protocols", 0x00000004, // TCP protokolünü kullan (RTSP için daha kararlı)
+                             "do-retransmission", TRUE,  // Kayıp paketleri tekrar dene
+                             "buffer-mode", 1,  // slave mode - daha stabil
+                             "protocols", 0x00000007, // UDP + UDP-Multicast + TCP (kamera otomatik seçecek)
+                             "retry", 0,  // GStreamer retry kapalı - VideoManager restart'ı kontrollü yönetir
+                             "tcp-timeout", (guint64)10000000,  // 10 saniye TCP timeout
+                             "teardown-timeout", (guint64)5000000000,  // 5 saniye TEARDOWN timeout (yavaş kameralar için)
+                             "short-header", TRUE,  // Uyumluluk için kısa RTSP header
                              NULL);
+                qCDebug(VideoReceiverLog) << "RTSP configured: 1s buffer, UDP/TCP auto, controlled restart, 5s teardown";
             }
         } else if(isUdp264 || isUdp265 || isUdpMPEGTS) {
             if ((source = gst_element_factory_make("udpsrc", "source")) != nullptr) {
-                g_object_set(static_cast<gpointer>(source), "uri", QString("udp://%1:%2").arg(qPrintable(url.host()), QString::number(url.port())).toUtf8().data(), nullptr);
+                g_object_set(static_cast<gpointer>(source), 
+                             "uri", QString("udp://%1:%2").arg(qPrintable(url.host()), QString::number(url.port())).toUtf8().data(),
+                             "buffer-size", 2097152,  // 2MB buffer - paket kaybını minimize et
+                             "timeout", (guint64)0,   // Timeout yok - sürekli dinle
+                             "retrieve-sender-address", FALSE,  // Performans için kapalı
+                             NULL);
+                qCDebug(VideoReceiverLog) << "UDP source configured with 2MB buffer";
 
                 GstCaps* caps = nullptr;
 
@@ -992,6 +1060,9 @@ GstVideoReceiver::_makeSource(const QString& uri)
         }
 
         g_signal_connect(parser, "autoplug-query", G_CALLBACK(_filterParserCaps), nullptr);
+        
+        // Parser'ı hatalı paketlere karşı toleranslı yap
+        // parsebin içindeki h265parse otomatik oluşturulacak ve default ayarları kullanacak
 
         gst_bin_add_many(GST_BIN(bin), source, parser, nullptr);
 
@@ -1001,6 +1072,12 @@ GstVideoReceiver::_makeSource(const QString& uri)
                 qCCritical(VideoReceiverLog) << "gst_element_factory_make('tsdemux') failed";
                 break;
             }
+            
+            // tsdemux'ı paket kaybına karşı toleranslı yap
+            g_object_set(tsdemux,
+                         "ignore-pcr", TRUE,  // PCR hatalarını yoksay
+                         NULL);
+            qCDebug(VideoReceiverLog) << "MPEG-TS demuxer configured for error tolerance";
 
             gst_bin_add(GST_BIN(bin), tsdemux);
 
@@ -1023,13 +1100,17 @@ GstVideoReceiver::_makeSource(const QString& uri)
                     break;
                 }
 
-                        // Düşük gecikme için jitterbuffer ayarları
+                        // Paket kaybına dayanıklı jitterbuffer ayarları
                 g_object_set(buffer,
-                             "latency", 0,
-                             "do-lost", TRUE,
-                             "drop-on-latency", TRUE,
-                             "mode", 0,  // pipeline clock'una bağlı mod (düşük gecikme için)
+                             "latency", 1000,  // 1000ms latency - paket kaybına güçlü koruma
+                             "do-lost", FALSE,  // Kayıp paket olaylarını yayınlama - gereksiz overhead
+                             "drop-on-latency", FALSE,  // Asla frame drop etme
+                             "mode", 1,  // buffer mode - daha dayanıklı
+                             "do-retransmission", TRUE,  // Kayıp paketleri tekrar iste
+                             "rtx-max-retries", 20,  // 20 kez tekrar dene
+                             "rtx-delay", 40,  // 40ms bekle sonra tekrar iste
                              NULL);
+                qCDebug(VideoReceiverLog) << "Jitterbuffer configured with high tolerance (1000ms, 20 retries)";
 
                 gst_bin_add(GST_BIN(bin), buffer);
 
@@ -1116,17 +1197,23 @@ GstVideoReceiver::_makeDecoder(GstCaps* caps, GstElement* videoSink)
             qCCritical(VideoReceiverLog) << "Set decoder to use multiple threads";
         }*/
         if (decoder) {
-            // Set common properties for improved decoding
+            // Decoder'ı paket kaybına karşı toleranslı yap
             if (g_object_class_find_property(G_OBJECT_GET_CLASS(decoder), "max-threads"))
                 g_object_set(decoder, "max-threads", 6, NULL);
 
-                    // For hardware decoder
+            // Hardware decoder için async mode
             if (g_object_class_find_property(G_OBJECT_GET_CLASS(decoder), "async-handling"))
                 g_object_set(decoder, "async-handling", TRUE, NULL);
 
-                    // For software decoder
+            // Software decoder için hatalı frame'leri de göster - stream kesintisiz sürsün
             if (g_object_class_find_property(G_OBJECT_GET_CLASS(decoder), "output-corrupt"))
-                g_object_set(decoder, "output-corrupt", FALSE, NULL);
+                g_object_set(decoder, "output-corrupt", TRUE, NULL);  // TRUE: Hatalı frame'leri de göster
+            
+            // Software decoder için error concealment
+            if (g_object_class_find_property(G_OBJECT_GET_CLASS(decoder), "skip-frame"))
+                g_object_set(decoder, "skip-frame", 0, NULL);  // 0: Hiçbir frame'i atlama
+            
+            qCDebug(VideoReceiverLog) << "Decoder configured for error tolerance (output-corrupt=TRUE)";
         }
 
     } while(0);
@@ -1326,13 +1413,19 @@ GstVideoReceiver::_addDecoder(GstElement* src)
     gst_bin_add(GST_BIN(_pipeline), _decoder);
     gst_element_sync_state_with_parent(_decoder);
 
-            // h265parse yarat
+            // h265parse yarat - paket kaybına toleranslı
     GstElement* parser = gst_element_factory_make("h265parse", "h265parser");
     if (!parser) {
         qCCritical(VideoReceiverLog) << "Failed to create h265parse!";
         return false;
     }
-    g_object_set(parser, "stream-format", 0 /* byte-stream */, "config-interval", -1, nullptr); // 0=byte-stream, 1=avc, 2=hvc1
+    // stream-format: byte-stream, config-interval: her keyframe'de config gönder
+    // Paket kaybında stream recover olabilsin
+    g_object_set(parser, 
+                 "stream-format", 0,  // byte-stream
+                 "config-interval", 1,  // Her 1 saniyede config gönder (default -1)
+                 NULL);
+    qCDebug(VideoReceiverLog) << "H265 parser configured with config-interval=1 for error resilience";
 
     gst_bin_add(GST_BIN(_pipeline), parser);
     gst_element_sync_state_with_parent(parser);
@@ -1416,15 +1509,16 @@ GstVideoReceiver::_addVideoSink(GstPad* pad)
     gst_object_ref(_videoSink);
     gst_bin_add(GST_BIN(_pipeline), _videoSink);
 
-            // DEĞİŞTİRDİM2
-            // In _addVideoSink, modify your videoConvert setup
+            // Smoothing queue: Video sink öncesi akışı yumuşatır
     GstElement* smoothingQueue = gst_element_factory_make("queue", "smoothingQueue");
     if (smoothingQueue) {
         g_object_set(smoothingQueue,
-                     "leaky", 0,                   // Don't leak
-                     "max-size-buffers", 2,        // Hold 2 frames for smoothing
-                     "max-size-time", 33000000,    // ~33ms (1 frame at 30fps)
+                     "leaky", 2,                   // downstream: eski frame'leri at
+                     "max-size-buffers", 3,        // 3 frame tut
+                     "max-size-time", 100000000,   // ~100ms
+                     "flush-on-eos", TRUE,
                      NULL);
+        qCDebug(VideoReceiverLog) << "Smoothing queue configured: 3 buffers, 100ms";
 
         gst_bin_add(GST_BIN(_pipeline), smoothingQueue);
         gst_element_sync_state_with_parent(smoothingQueue);
@@ -1497,7 +1591,20 @@ GstVideoReceiver::_addVideoSink(GstPad* pad)
 void
 GstVideoReceiver::_noteTeeFrame(void)
 {
-    _lastSourceFrameTime = QDateTime::currentSecsSinceEpoch();
+    qint64 now = QDateTime::currentSecsSinceEpoch();
+    _lastSourceFrameTime = now;
+    
+    // Error flag'ini clear et - frame geldi demek ki stream çalışıyor
+    if (_errorDetected) {
+        qCDebug(VideoReceiverLog) << "Frame received after error - stream recovered!" << _uri;
+        _errorDetected = false;
+    }
+    
+    static qint64 lastLogTime = 0;
+    if (now - lastLogTime > 10) {  // Her 10 saniyede bir log
+        qCDebug(VideoReceiverLog) << "Frame received, last source frame time updated" << _uri;
+        lastLogTime = now;
+    }
 }
 
 void
@@ -1695,8 +1802,20 @@ GstVideoReceiver::_onBusMessage(GstBus* bus, GstMessage* msg, gpointer data)
                 }
 
                 pThis->_slotHandler.dispatch([pThis](){
-                    qCCritical(VideoReceiverLog) << "Stopping because of error";
-                    pThis->stop();
+                    qCCritical(VideoReceiverLog) << "===== GSTREAMER ERROR DETECTED =====";
+                    qCCritical(VideoReceiverLog) << "Recording active:" << pThis->_recording;
+                    qCCritical(VideoReceiverLog) << "Streaming active:" << pThis->_streaming;
+                    
+                    if (pThis->_recording) {
+                        // Kayıt yapılırken error - bozuk dosya oluşmasını engelle
+                        qCCritical(VideoReceiverLog) << "Recording is active - stopping to prevent corrupted file";
+                        pThis->stop();
+                    } else {
+                        // Sadece görüntüleme - error flag'ini set et, 10 saniye bekle
+                        qCCritical(VideoReceiverLog) << "Not recording - setting error flag, will wait 10 seconds before restart";
+                        pThis->_errorDetected = true;
+                        pThis->_lastSourceFrameTime = QDateTime::currentSecsSinceEpoch(); // Timer'ı başlat
+                    }
                 });
             } while(0);
             break;

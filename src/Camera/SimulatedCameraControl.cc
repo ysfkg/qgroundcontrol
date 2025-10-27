@@ -13,6 +13,7 @@
 #include "SettingsManager.h"
 #include "FlyViewSettings.h"
 #include "Vehicle.h"
+#include "CameraUdpManager.h"
 
 #include <QtQml/QQmlEngine>
 
@@ -70,10 +71,10 @@ static QByteArray buildTimCommandForNow() {
     return addCrc(cmd.toUtf8()); // CRC eklenmiş QByteArray döner
 }
 
-static void sendTimeToCamera(const QHostAddress &ip, quint16 port) {
-    QUdpSocket sock;
+static void sendTimeToCamera() {
     QByteArray packet = buildTimCommandForNow();
-    sock.writeDatagram(packet, ip, port);
+    CameraUdpManager::instance()->sendCommand(packet, true);  // Öncelikli komut
+    qCDebug(CameraControlLog) << "Time sync command queued:" << packet.size() << "bytes";
 }
 
 //-----------------------------------------------------------------------------
@@ -83,7 +84,37 @@ SimulatedCameraControl::SimulatedCameraControl(Vehicle* vehicle, QObject* parent
 {
     QQmlEngine::setObjectOwnership(this, QQmlEngine::CppOwnership);
 
-    connect(VideoManager::instance(), &VideoManager::recordingChanged, this, &SimulatedCameraControl::videoCaptureStatusChanged);
+    connect(VideoManager::instance(), &VideoManager::recordingChanged, this, [this]() {
+        bool isRecording = VideoManager::instance()->recording();
+        qCCritical(CameraControlLog) << "===== VIDEO RECORDING STATUS CHANGED =====" << isRecording;
+        qCCritical(CameraControlLog) << "  Timer active:" << _videoRecordTimeUpdateTimer.isActive();
+        qCCritical(CameraControlLog) << "  Elapsed time:" << _videoRecordTimeElapsedTimer.elapsed() << "ms";
+        qCCritical(CameraControlLog) << "  Vehicle:" << (_vehicle ? _vehicle->id() : -1);
+        qCCritical(CameraControlLog) << "  Callback stack:";
+        qCCritical(CameraControlLog) << "    - This function called due to VideoManager recordingChanged signal";
+        
+        // Eğer kayıt durdu ve timer hala aktifse, beklenmeyen bir durum
+        if (!isRecording && _videoRecordTimeUpdateTimer.isActive()) {
+            qCCritical(CameraControlLog) << "  !!!!! WARNING: Recording stopped unexpectedly!";
+            qCCritical(CameraControlLog) << "  !!!!! Sending stop command to camera to keep sync.";
+            qCCritical(CameraControlLog) << "  !!!!! Check VideoManager/VideoReceiver logs for the root cause!";
+            qCCritical(CameraControlLog) << "  !!!!! This usually happens due to:";
+            qCCritical(CameraControlLog) << "  !!!!!   1. VideoReceiver timeout (>10s no frames)";
+            qCCritical(CameraControlLog) << "  !!!!!   2. GStreamer error";
+            qCCritical(CameraControlLog) << "  !!!!!   3. Vehicle/connection issue";
+            
+            // Beklenmeyen durum: VideoReceiver kayıt durdu ama bizim timer aktif
+            // Kameraya dur komutu gönder
+            static const QByteArray stopCommand = "#TPUD2wREC0043";
+            CameraUdpManager::instance()->sendCommand(stopCommand, true);
+            qCDebug(CameraControlLog) << "Unexpected stop - camera command sent:" << stopCommand;
+            
+            // Timer'ı durdur
+            _videoRecordTimeUpdateTimer.stop();
+        }
+        
+        emit videoCaptureStatusChanged();
+    });
 
     auto flyViewSettings = SettingsManager::instance()->flyViewSettings();
     connect(flyViewSettings->showSimpleCameraControl(), &Fact::rawValueChanged, this, &SimulatedCameraControl::infoChanged);
@@ -91,9 +122,18 @@ SimulatedCameraControl::SimulatedCameraControl(Vehicle* vehicle, QObject* parent
     _videoRecordTimeUpdateTimer.setInterval(1000);
     connect(&_videoRecordTimeUpdateTimer, &QTimer::timeout, this, &SimulatedCameraControl::recordTimeChanged);
 
-    // C12 kameraya zaman bilgisi gönder
-    sendTimeToCamera(QHostAddress("192.168.144.108"), 5000);
-    qCDebug(CameraControlLog) << "Camera time synchronized on initialization";
+    // C12 kameraya zaman bilgisi gönder - ağ ve kamera hazır olması için gecikme ekle
+    QTimer::singleShot(2000, this, [this]() {
+        qCDebug(CameraControlLog) << "Sending initial time sync to camera...";
+        sendTimeToCamera();
+        qCDebug(CameraControlLog) << "Camera time synchronized (delayed initialization)";
+        
+        // 5 saniye sonra tekrar gönder (kameraya emin olsun diye)
+        QTimer::singleShot(5000, this, [this]() {
+            qCDebug(CameraControlLog) << "Sending second time sync to camera...";
+            sendTimeToCamera();
+        });
+    });
 }
 
 SimulatedCameraControl::~SimulatedCameraControl()
@@ -208,14 +248,8 @@ bool SimulatedCameraControl::takePhoto()
 
                 // UDP ile C12 kameraya fotoğraf çekme komutu gönder
         static const QByteArray command = "#TPUD2wCAP013E";  // Komut sabit
-        static const QHostAddress ipAddress("192.168.144.108");
-        static const quint16 port = 5000;
-
-        QUdpSocket udpSocket;
-        qCDebug(CameraControlLog) << "Sending UDP photo command to C12:" << command;
-        if (udpSocket.writeDatagram(command, ipAddress, port) == -1) {
-            qCWarning(CameraControlLog) << "UDP send failed:" << udpSocket.errorString();
-        }
+        CameraUdpManager::instance()->sendCommand(command, true);  // Öncelikli komut
+        qCDebug(CameraControlLog) << "Photo command queued (priority):" << command;
 
         _photoCaptureStatus = PHOTO_CAPTURE_IN_PROGRESS;
         emit photoCaptureStatusChanged();
@@ -246,52 +280,68 @@ bool SimulatedCameraControl::startVideoRecording()
         return false;
     }
 
+    // Önce C12 kameraya kayıt başlat komutu gönder
+    static const QByteArray command = "#TPUD2wREC0144";  // C12 video kayıt başlatma komutu
+    CameraUdpManager::instance()->sendCommand(command, true);  // Öncelikli komut
+    qCDebug(CameraControlLog) << "Video start command queued (priority):" << command;
+
+    // Timer'ları başlat
     _videoRecordTimeUpdateTimer.start();
     _videoRecordTimeElapsedTimer.start();
+    
+    // Video 0 kaydını başlat
     VideoManager::instance()->startRecording();
+    qCDebug(CameraControlLog) << "Video0 startRecording called";
 
+    // Video 1 varsa onu da başlat (daha kısa gecikme)
     if (VideoManager::instance()->hasVideo1()) {
-        VideoManager::instance()->startRecording1();
-        qWarning() << "startVideoRecording: Camera already recording";
+        QTimer::singleShot(100, this, [this]() {
+            VideoManager::instance()->startRecording1();
+            qCDebug(CameraControlLog) << "Video1 recording started";
+        });
     }
 
-    static const QByteArray command = "#TPUD2wREC0144";  // C12 video kayıt başlatma komutu
-    static const QHostAddress ipAddress("192.168.144.108");
-    static const quint16 port = 5000;
-    QUdpSocket udpSocket;
-    qCritical(CameraControlLog) << "Sending UDP video start command to C12:" << command;
-    if (udpSocket.writeDatagram(command, ipAddress, port) == -1) {
-        qCWarning(CameraControlLog) << "UDP video start send failed:" << udpSocket.errorString();
-    }
+    // Status değişikliğini bildir (VideoManager recordingChanged sinyali zaten emit ediyor ama yine de)
+    QTimer::singleShot(200, this, [this]() {
+        emit videoCaptureStatusChanged();
+    });
 
-    return false;
+    return true;  // Başarılı!
 }
 
 bool SimulatedCameraControl::stopVideoRecording()
 {
     qCDebug(CameraControlLog) << "stopVideoRecording()";
 
-    if(videoCaptureStatus() != VIDEO_CAPTURE_STATUS_RUNNING) {
+    // VideoManager'ın recording durumunu kontrol et
+    bool isRecording = VideoManager::instance()->recording();
+    qCDebug(CameraControlLog) << "Current recording status:" << isRecording;
+
+    if(!isRecording) {
         qCWarning(CameraControlLog) << "stopVideoRecording: Camera not recording";
         return false;
     }
 
+    // Önce C12 kameraya dur komutu gönder
     static const QByteArray command = "#TPUD2wREC0043";  // C12 video kayıt durdurma komutu
-    static const QHostAddress ipAddress("192.168.144.108");
-    static const quint16 port = 5000;
+    CameraUdpManager::instance()->sendCommand(command, true);  // Öncelikli komut
+    qCDebug(CameraControlLog) << "Video stop command queued (priority):" << command;
 
-    QUdpSocket udpSocket;
-    qCritical(CameraControlLog) << "Sending UDP video stop command to C12:" << command;
-    if (udpSocket.writeDatagram(command, ipAddress, port) == -1) {
-        qCWarning(CameraControlLog) << "UDP video start send failed:" << udpSocket.errorString();
-    }
-
+    // Timer'ı durdur
     _videoRecordTimeUpdateTimer.stop();
+    
+    // Video 0 kaydını durdur
     VideoManager::instance()->stopRecording();
+    qCDebug(CameraControlLog) << "Video0 stopRecording called";
 
+    // Video 1 varsa onu da durdur (hemen)
     if (VideoManager::instance()->hasVideo1()) {
         VideoManager::instance()->stopRecording1();
+        qCDebug(CameraControlLog) << "Video1 stopRecording called";
     }
+
+    // Status değişikliğini bildir
+    emit videoCaptureStatusChanged();
 
     return true;
 }

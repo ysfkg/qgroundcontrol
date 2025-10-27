@@ -106,6 +106,10 @@ void VideoManager::init()
             switch (status) {
                 case VideoReceiver::STATUS_OK:
                     videoReceiver.started = true;
+                    // Başarılı bağlantı - restart sayacını sıfırla
+                    videoReceiver.restartCount = 0;
+                    videoReceiver.currentRestartDelay = 2000; // Başlangıç değerine dön
+                    qCDebug(VideoManagerLog) << "Video stream connected successfully, restart counter reset";
                     if (videoReceiver.sink) {
                         videoReceiver.receiver->startDecoding(videoReceiver.sink);
                     }
@@ -125,7 +129,30 @@ void VideoManager::init()
             if (status == VideoReceiver::STATUS_INVALID_URL) {
                 qCDebug(VideoManagerLog) << "Invalid video URL. Not restarting";
             } else {
-                _startReceiver(videoReceiver.index);
+                // Hemen restart yerine gecikme ile restart - kamerayı bunaltmayalım
+                qint64 now = QDateTime::currentMSecsSinceEpoch();
+                videoReceiver.restartCount++;
+                
+                int delay = videoReceiver.currentRestartDelay;
+                
+                // 10 başarısız denemeden sonra 5 dakika bekle (kamera korunma modunda olabilir)
+                if (videoReceiver.restartCount > 10 && videoReceiver.restartCount % 10 == 1) {
+                    delay = 300000; // 5 dakika
+                    qCWarning(VideoManagerLog) << "Too many restart attempts (" << videoReceiver.restartCount 
+                                               << "), waiting 5 minutes before retry";
+                } else {
+                    // Exponential backoff: Her denemede gecikmeyi artır (max 30 saniye)
+                    videoReceiver.currentRestartDelay = qMin(videoReceiver.currentRestartDelay * 2, 30000);
+                }
+                
+                videoReceiver.lastRestartTime = now;
+                
+                qCDebug(VideoManagerLog) << "Scheduling restart in" << delay << "ms (attempt" << videoReceiver.restartCount 
+                                        << ", next delay will be" << videoReceiver.currentRestartDelay << "ms)";
+                
+                QTimer::singleShot(delay, this, [this, id = videoReceiver.index]() {
+                    _startReceiver(id);
+                });
             }
         });
 
@@ -224,6 +251,10 @@ void VideoManager::init1()
             switch (status) {
                 case VideoReceiver::STATUS_OK:
                     videoReceiver.started = true;
+                    // Başarılı bağlantı - restart sayacını sıfırla
+                    videoReceiver.restartCount = 0;
+                    videoReceiver.currentRestartDelay = 2000; // Başlangıç değerine dön
+                    qCDebug(VideoManagerLog) << "Video stream connected successfully, restart counter reset";
                     if (videoReceiver.sink) {
                         videoReceiver.receiver->startDecoding(videoReceiver.sink);
                     }
@@ -244,7 +275,30 @@ void VideoManager::init1()
             if (status == VideoReceiver::STATUS_INVALID_URL) {
                 qCDebug(VideoManagerLog) << "Invalid video URL. Not restarting";
             } else {
-                _startReceiver1(videoReceiver.index);
+                // Hemen restart yerine gecikme ile restart - kamerayı bunaltmayalım
+                qint64 now = QDateTime::currentMSecsSinceEpoch();
+                videoReceiver.restartCount++;
+                
+                int delay = videoReceiver.currentRestartDelay;
+                
+                // 10 başarısız denemeden sonra 5 dakika bekle (kamera korunma modunda olabilir)
+                if (videoReceiver.restartCount > 10 && videoReceiver.restartCount % 10 == 1) {
+                    delay = 300000; // 5 dakika
+                    qCWarning(VideoManagerLog) << "Too many restart attempts (" << videoReceiver.restartCount 
+                                               << "), waiting 5 minutes before retry";
+                } else {
+                    // Exponential backoff: Her denemede gecikmeyi artır (max 30 saniye)
+                    videoReceiver.currentRestartDelay = qMin(videoReceiver.currentRestartDelay * 2, 30000);
+                }
+                
+                videoReceiver.lastRestartTime = now;
+                
+                qCDebug(VideoManagerLog) << "Scheduling restart in" << delay << "ms (attempt" << videoReceiver.restartCount 
+                                        << ", next delay will be" << videoReceiver.currentRestartDelay << "ms)";
+                
+                QTimer::singleShot(delay, this, [this, id = videoReceiver.index]() {
+                    _startReceiver1(id);
+                });
             }
         });
 
@@ -1316,7 +1370,7 @@ void VideoManager::_startReceiver(unsigned id)
     const unsigned rtsptimeout = _videoSettings->rtspTimeout()->rawValue().toUInt();
     /* The gstreamer rtsp source will switch to tcp if udp is not available after 5 seconds.
        So we should allow for some negotiation time for rtsp */
-    const unsigned timeout = (source == VideoSettings::videoSourceRTSP ? rtsptimeout : 3);
+    const unsigned timeout = (source == VideoSettings::videoSourceRTSP ? rtsptimeout : 10);
 
     _videoReceiverData[id].receiver->start(_videoReceiverData[id].uri, timeout, _videoReceiverData[id].lowLatencyStreaming ? -1 : 0);
 }
@@ -1342,7 +1396,7 @@ void VideoManager::_startReceiver1(unsigned id)
     const unsigned rtsptimeout = _videoSettings->rtspTimeout1()->rawValue().toUInt();
     /* The gstreamer rtsp source will switch to tcp if udp is not available after 5 seconds.
        So we should allow for some negotiation time for rtsp */
-    const unsigned timeout = (source == VideoSettings::videoSourceRTSP ? rtsptimeout : 3);
+    const unsigned timeout = (source == VideoSettings::videoSourceRTSP ? rtsptimeout : 10);
     if (!_videoReceiverData1[id].receiver) {
         qWarning() << "Receiver is null for video source" << id;
     }

@@ -168,6 +168,7 @@ class GstVideoReceiver : public VideoReceiver
     uint32_t            _signalDepth;
 
     bool                _endOfStream;
+    bool                _errorDetected;  // Error tespit edildi, watchdog restart edecek
 
     static const char*  _kFileMux[FILE_FORMAT_MAX - FILE_FORMAT_MIN];
 };

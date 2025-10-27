@@ -4,6 +4,8 @@ target_sources(QGC
     PRIVATE
         CameraMetaData.cc
         CameraMetaData.h
+        CameraUdpManager.cc
+        CameraUdpManager.h
         MavlinkCameraControl.cc
         MavlinkCameraControl.h
         QGCCameraIO.cc

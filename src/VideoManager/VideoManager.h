@@ -199,6 +199,9 @@ private:
         bool lowLatencyStreaming = false;
         size_t index = 0;
         QString name;
+        int restartCount = 0;           // Restart denemesi sayısı
+        qint64 lastRestartTime = 0;     // Son restart zamanı (msecs)
+        int currentRestartDelay = 2000; // Mevcut restart gecikmesi (ms) - başlangıç 2 saniye
     };
     struct VideoReceiverData1 {
         VideoReceiver *receiver = nullptr;
@@ -208,6 +211,9 @@ private:
         bool lowLatencyStreaming = false;
         size_t index = 0;
         QString name;
+        int restartCount = 0;           // Restart denemesi sayısı
+        qint64 lastRestartTime = 0;     // Son restart zamanı (msecs)
+        int currentRestartDelay = 2000; // Mevcut restart gecikmesi (ms) - başlangıç 2 saniye
     };
     QList<VideoReceiverData> _videoReceiverData = QList<VideoReceiverData>(MAX_VIDEO_RECEIVERS);
     QList<VideoReceiverData1> _videoReceiverData1 = QList<VideoReceiverData1>(MAX_VIDEO_RECEIVERS);
