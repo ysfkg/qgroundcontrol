@@ -18,6 +18,63 @@
 
 #include <QUdpSocket>
 #include <QHostAddress>
+#include <QDateTime>
+#include <QTimeZone>
+#include <QByteArray>
+#include <QString>
+
+//-----------------------------------------------------------------------------
+// Zaman senkronizasyonu için yardımcı fonksiyonlar
+//-----------------------------------------------------------------------------
+static QString toHex2Upper(uint8_t v) {
+    return QString("%1").arg(v, 2, 16, QLatin1Char('0')).toUpper();
+}
+
+static QByteArray addCrc(const QByteArray &cmdWithoutCrc) {
+    int crc = 0;
+    for (auto b : cmdWithoutCrc) crc += static_cast<unsigned char>(b);
+    uint8_t crcByte = static_cast<uint8_t>(crc & 0xFF);
+    QString cmdWithCrc = QString::fromUtf8(cmdWithoutCrc) + toHex2Upper(crcByte);
+    return cmdWithCrc.toUtf8();
+}
+
+static QByteArray buildTimCommandForNow() {
+    // Zaman dilimini Europe/Istanbul olarak ayarlıyoruz
+    QTimeZone tz("Europe/Istanbul");
+    QDateTime now = QDateTime::currentDateTimeUtc();
+    if (tz.isValid()) now = now.toTimeZone(tz);
+
+    // hh mm ss
+    int hh = now.time().hour();
+    int mm = now.time().minute();
+    int ss = now.time().second();
+    int msec = now.time().msec();
+
+    // PDF formatı: hhmmss.ssDDMMYY -- burada .ss kısmını centisecond (ms/10) alıyoruz
+    int centisec = (msec / 10) % 100; // 0..99
+
+    int day = now.date().day();
+    int month = now.date().month();
+    int year2 = now.date().year() % 100; // YY
+
+    QString timestamp = QString("%1%2%3.%4%5%6%7")
+        .arg(hh, 2, 10, QLatin1Char('0'))
+        .arg(mm, 2, 10, QLatin1Char('0'))
+        .arg(ss, 2, 10, QLatin1Char('0'))
+        .arg(centisec, 2, 10, QLatin1Char('0'))
+        .arg(day, 2, 10, QLatin1Char('0'))
+        .arg(month, 2, 10, QLatin1Char('0'))
+        .arg(year2, 2, 10, QLatin1Char('0'));
+
+    QString cmd = QString("#TPUDFwTIM%1").arg(timestamp);
+    return addCrc(cmd.toUtf8()); // CRC eklenmiş QByteArray döner
+}
+
+static void sendTimeToCamera(const QHostAddress &ip, quint16 port) {
+    QUdpSocket sock;
+    QByteArray packet = buildTimCommandForNow();
+    sock.writeDatagram(packet, ip, port);
+}
 
 //-----------------------------------------------------------------------------
 SimulatedCameraControl::SimulatedCameraControl(Vehicle* vehicle, QObject* parent)
@@ -33,6 +90,10 @@ SimulatedCameraControl::SimulatedCameraControl(Vehicle* vehicle, QObject* parent
 
     _videoRecordTimeUpdateTimer.setInterval(1000);
     connect(&_videoRecordTimeUpdateTimer, &QTimer::timeout, this, &SimulatedCameraControl::recordTimeChanged);
+
+    // C12 kameraya zaman bilgisi gönder
+    sendTimeToCamera(QHostAddress("192.168.144.108"), 5000);
+    qCDebug(CameraControlLog) << "Camera time synchronized on initialization";
 }
 
 SimulatedCameraControl::~SimulatedCameraControl()
@@ -194,12 +255,11 @@ bool SimulatedCameraControl::startVideoRecording()
         qWarning() << "startVideoRecording: Camera already recording";
     }
 
-    static const QByteArray command = "#TPUD2wVID0F6";  // C12 video kayıt başlatma komutu
+    static const QByteArray command = "#TPUD2wREC0144";  // C12 video kayıt başlatma komutu
     static const QHostAddress ipAddress("192.168.144.108");
     static const quint16 port = 5000;
-
     QUdpSocket udpSocket;
-    qCDebug(CameraControlLog) << "Sending UDP video start command to C12:" << command;
+    qCritical(CameraControlLog) << "Sending UDP video start command to C12:" << command;
     if (udpSocket.writeDatagram(command, ipAddress, port) == -1) {
         qCWarning(CameraControlLog) << "UDP video start send failed:" << udpSocket.errorString();
     }
@@ -216,12 +276,12 @@ bool SimulatedCameraControl::stopVideoRecording()
         return false;
     }
 
-    static const QByteArray command = "#TPUD2wVID1F7";  // C12 video kayıt durdurma komutu
+    static const QByteArray command = "#TPUD2wREC0043";  // C12 video kayıt durdurma komutu
     static const QHostAddress ipAddress("192.168.144.108");
     static const quint16 port = 5000;
 
     QUdpSocket udpSocket;
-    qCDebug(CameraControlLog) << "Sending UDP video start command to C12:" << command;
+    qCritical(CameraControlLog) << "Sending UDP video stop command to C12:" << command;
     if (udpSocket.writeDatagram(command, ipAddress, port) == -1) {
         qCWarning(CameraControlLog) << "UDP video start send failed:" << udpSocket.errorString();
     }

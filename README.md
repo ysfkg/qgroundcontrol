@@ -27,3 +27,28 @@
 *************************** v1.2.1 *********************** Üsttekiler ile birleştirildi  
 +Gimbal hareketleri düz pot ile çalışacak şekilde güncellendi, vehicle.cc dosyası  
 
+*************************** v1.2.2 *********************** Üsttekiler ile birleştirildi  
++C12 kamera zaman senkronizasyonu eklendi
+
+**Değişen Dosyalar ve Detaylar:**
+
+**src/Camera/SimulatedCameraControl.cc:**
+  - QDateTime, QTimeZone, QByteArray, QString header'ları eklendi
+  - toHex2Upper(): uint8_t değeri hexadecimal stringe çeviren yardımcı fonksiyon
+  - addCrc(): Kamera komutuna CRC checksum ekleyen fonksiyon
+  - buildTimCommandForNow(): Europe/Istanbul saat diliminde sistem saatini alıp C12 kamera formatına çeviren fonksiyon
+    * Format: #TPUDFwTIMhhmmss.ssDDMMYYCC
+    * hh: Saat (24 saat formatı, 00-23)
+    * mm: Dakika
+    * ss: Saniye
+    * ss: Centisaniye (milisaniyenin 1/10'u)
+    * DD: Gün
+    * MM: Ay
+    * YY: Yıl (son 2 hane)
+    * CC: CRC checksum
+  - sendTimeToCamera(): UDP ile kameraya zaman bilgisi gönderen fonksiyon
+  - SimulatedCameraControl constructor'ına otomatik zaman senkronizasyonu eklendi
+    * Uygulama başlatıldığında otomatik olarak C12 kameraya (192.168.144.108:5000) zaman bilgisi gönderilir
+    * Cihazın sistem saati Europe/Istanbul saat dilimine çevrilerek kullanılır
+    * UDP protokolü ile zaman komutu iletilir
+
