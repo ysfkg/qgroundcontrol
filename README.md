@@ -29,6 +29,8 @@
 
 *************************** v1.2.2 *********************** Üsttekiler ile birleştirildi  
 +C12 kamera zaman senkronizasyonu eklendi
++Video kayıt sorunu %99 çözüldü - PTS/DTS timestamp problemi düzeltildi
++C12 kameraya video kayıt başlatma/durdurma komutları UDP ile gönderiliyor
 
 **Değişen Dosyalar ve Detaylar:**
 
@@ -51,4 +53,34 @@
     * Uygulama başlatıldığında otomatik olarak C12 kameraya (192.168.144.108:5000) zaman bilgisi gönderilir
     * Cihazın sistem saati Europe/Istanbul saat dilimine çevrilerek kullanılır
     * UDP protokolü ile zaman komutu iletilir
+  - takePhoto(): C12 kameraya fotoğraf çekme komutu gönderimi (#TPUD2wCAP013E)
+  - startVideoRecording(): C12 kameraya video kayıt başlatma komutu (#TPUD2wREC0144)
+  - stopVideoRecording(): C12 kameraya video kayıt durdurma komutu (#TPUD2wREC0043)
+
+**src/VideoManager/VideoReceiver/GStreamer/GstVideoReceiver.cc:**
+  - Video kayıt PTS/DTS timestamp problemi çözüldü (wallclock bazlı hesaplama)
+  - _recordingProbe(): Yeni probe fonksiyonu eklendi - gerçek zamanlı PTS/DTS/Duration hesaplama
+  - Recording queue buffer ayarları optimize edildi:
+    * leaky=0 (buffer kaybı yok)
+    * max-size-buffers=100 (5 saniye buffer)
+    * max-size-time=5 saniye
+  - Keyframe kontrolü geliştirildi - kayıt mutlaka keyframe ile başlıyor
+  - Matroska muxer ayarları eklendi:
+    * streamable=FALSE (dosya sonunda index yazılır, seeking için)
+    * min-index-interval=0 (her keyframe'de index)
+    * max-cluster-duration=2 saniye
+  - Wallclock bazlı timestamp tracking:
+    * _recordingStartTime: Kayıt başlangıç zamanı (monotonic clock)
+    * _recordingFrameCount: Frame sayacı
+    * _lastFrameTimestamp: Son frame PTS (duration hesabı için)
+  - Frame-by-frame PTS hesaplama (g_get_monotonic_time kullanarak)
+  - Her frame için doğru duration hesaplaması
+  - Detaylı debug logging (ilk 10 frame + her 100 frame)
+  - FPS ve gerçek süre istatistikleri
+
+**src/VideoManager/VideoReceiver/GStreamer/GstVideoReceiver.h:**
+  - _recordingStartTime: GstClockTime türünde yeni member
+  - _recordingFrameCount: guint64 türünde frame sayacı
+  - _lastFrameTimestamp: GstClockTime türünde son frame PTS
+  - _recordingProbe(): Static probe fonksiyon tanımı
 
