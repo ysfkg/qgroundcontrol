@@ -399,6 +399,12 @@ public:
 
     /// Clears all PARAM_MAP_RC settings from vehicle
     Q_INVOKABLE void clearAllParamMapRC(void);
+    
+    /// Get parameter value from parameter manager (thread-safe for QML)
+    ///     @param componentId Component id or ParameterManager::defaultComponentId
+    ///     @param paramName Parameter name
+    ///     @return Parameter value or NaN if parameter doesn't exist
+    Q_INVOKABLE double getParameterValue(int componentId, const QString& paramName);
 
     /// Removes the vehicle from the system
     Q_INVOKABLE void closeVehicle(void) { _vehicleLinkManager->closeVehicle(); }

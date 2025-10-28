@@ -3997,6 +3997,24 @@ void Vehicle::clearAllParamMapRC(void)
     }
 }
 
+double Vehicle::getParameterValue(int componentId, const QString& paramName)
+{
+    if (!_parameterManager) {
+        return qQNaN();
+    }
+    
+    if (!_parameterManager->parameterExists(componentId, paramName)) {
+        return qQNaN();
+    }
+    
+    Fact* fact = _parameterManager->getParameter(componentId, paramName);
+    if (!fact) {
+        return qQNaN();
+    }
+    
+    return fact->rawValue().toDouble();
+}
+
 void Vehicle::sendJoystickDataThreadSafe(float roll, float pitch, float yaw, float thrust, quint16 buttons)
 {
     SharedLinkInterfacePtr sharedLink = vehicleLinkManager()->primaryLink().lock();

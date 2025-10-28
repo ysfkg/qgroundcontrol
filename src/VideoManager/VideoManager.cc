@@ -1370,7 +1370,7 @@ void VideoManager::_startReceiver(unsigned id)
     const unsigned rtsptimeout = _videoSettings->rtspTimeout()->rawValue().toUInt();
     /* The gstreamer rtsp source will switch to tcp if udp is not available after 5 seconds.
        So we should allow for some negotiation time for rtsp */
-    const unsigned timeout = (source == VideoSettings::videoSourceRTSP ? rtsptimeout : 10);
+    const unsigned timeout = (source == VideoSettings::videoSourceRTSP ? 5 : 6);
 
     _videoReceiverData[id].receiver->start(_videoReceiverData[id].uri, timeout, _videoReceiverData[id].lowLatencyStreaming ? -1 : 0);
 }
@@ -1396,7 +1396,7 @@ void VideoManager::_startReceiver1(unsigned id)
     const unsigned rtsptimeout = _videoSettings->rtspTimeout1()->rawValue().toUInt();
     /* The gstreamer rtsp source will switch to tcp if udp is not available after 5 seconds.
        So we should allow for some negotiation time for rtsp */
-    const unsigned timeout = (source == VideoSettings::videoSourceRTSP ? rtsptimeout : 10);
+    const unsigned timeout = (source == VideoSettings::videoSourceRTSP ? 5 : 6);
     if (!_videoReceiverData1[id].receiver) {
         qWarning() << "Receiver is null for video source" << id;
     }

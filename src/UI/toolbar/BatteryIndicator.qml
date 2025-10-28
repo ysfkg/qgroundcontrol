@@ -165,7 +165,7 @@ Item {
 
             function getBatteryPercentageText() {
                 if (!isNaN(battery.percentRemaining.rawValue)) {
-                    if (battery.percentRemaining.rawValue > 98.9) {
+                    if (battery.percentRemaining.rawValue > 95.9) {
                         return qsTr("100%")
                     } else {
                         return battery.percentRemaining.valueString + battery.percentRemaining.units
@@ -203,13 +203,101 @@ Item {
                 anchors.bottom:         parent.bottom
                 spacing:                0
 
-                QGCLabel {
+                // Yüzde ve kalan zaman yan yana
+                RowLayout {
                     Layout.alignment:       Qt.AlignHCenter
-                    verticalAlignment:      Text.AlignVCenter
-                    color:                  qgcPal.text
-                    text:                   getBatteryPercentageText()
-                    font.pointSize:         _showBoth ? ScreenTools.defaultFontPointSize : ScreenTools.mediumFontPointSize
+                    spacing:                ScreenTools.defaultFontPixelWidth * 0.5
                     visible:                _showBoth || _showPercentage
+
+                    QGCLabel {
+                        verticalAlignment:      Text.AlignVCenter
+                        color:                  getBatteryColor()//qgcPal.text
+                        text:                   getBatteryPercentageText()
+                        font.pointSize:         _showBoth ? ScreenTools.defaultFontPointSize : ScreenTools.mediumFontPointSize
+                    }
+
+                    QGCLabel {
+                        id:                     calculatedTimeLabel
+                        verticalAlignment:      Text.AlignVCenter
+                        color:                  getBatteryColor()
+                        property string calculatedTime: ""
+                        text:                   calculatedTime
+                        font.pointSize:         _showBoth ? ScreenTools.defaultFontPointSize : ScreenTools.mediumFontPointSize
+                        
+                        function updateCalculatedTime() {
+                            // Güvenlik kontrolleri
+                            if (!battery) {
+                                calculatedTime = ""
+                                return
+                            }
+                            
+                            // Parametreler henüz hazır değilse bekle
+                            if (!_activeVehicle || !_activeVehicle.parameterManager || !_activeVehicle.parameterManager.parametersReady) {
+                                calculatedTime = ""
+                                return
+                            }
+                            
+                            // Battery değerlerini al
+                            if (!battery.percentRemaining || !battery.current) {
+                                calculatedTime = ""
+                                return
+                            }
+                            
+                            var pr = battery.percentRemaining.rawValue
+                            var cr = battery.current.rawValue
+                            
+                            // Değerler geçersizse gösterme
+                            if (isNaN(pr) || isNaN(cr)) {
+                                calculatedTime = ""
+                                return
+                            }
+                            
+                            // BATT_CAPACITY parametresini al
+                            var battCapacity = _activeVehicle.getParameterValue(-1, "BATT_CAPACITY")
+                            if (isNaN(battCapacity) || battCapacity <= 0) {
+                                calculatedTime = ""
+                                return
+                            }
+                            
+                            var percentRemaining = pr / 100.0
+                            var current = Math.abs(cr) > 13 ? Math.abs(cr) : 13
+                            
+                            // Hesapla ve göster: 60 * ((BATT_CAPACITY/1000) * percentRemaining) / (current+2)
+                            var calculatedValue = 60 * ((battCapacity/1000) * percentRemaining) / (current+2)
+                            calculatedTime = " " + calculatedValue.toFixed(1) + "min"
+                        }
+                        
+                        // İlk yüklemede ve değişikliklerde çağır
+                        Component.onCompleted: {
+                            updateCalculatedTime()
+                        }
+                        
+                        Connections {
+                            target: battery
+                            function onPercentRemainingChanged() {
+                                parent.updateCalculatedTime()
+                            }
+                            function onCurrentChanged() {
+                                parent.updateCalculatedTime()
+                            }
+                        }
+                        
+                        Connections {
+                            target: _activeVehicle ? _activeVehicle.parameterManager : null
+                            function onParametersReadyChanged(ready) {
+                                if (ready) {
+                                    Qt.callLater(parent.updateCalculatedTime)
+                                }
+                            }
+                        }
+                        
+                        Timer {
+                            interval: 1000
+                            running: battery && _activeVehicle
+                            repeat: true
+                            onTriggered: parent.updateCalculatedTime()
+                        }
+                    }
                 }
 
                 QGCLabel {
