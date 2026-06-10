@@ -15,13 +15,18 @@ import QGroundControl.Controls
 import QGroundControl.FlightDisplay
 
 RowLayout {
+
+    property var  _flyViewSettings:             QGroundControl.settingsManager.flyViewSettings
+    property bool _showAdditionalIndicators:    _flyViewSettings.showAdditionalIndicatorsCompass.value
+
+
     TelemetryValuesBar {
-        Layout.alignment:   Qt.AlignBottom
-        //extraWidth:         instrumentPanel.extraValuesWidth/4
+        Layout.alignment: _showAdditionalIndicators ? (Qt.AlignRight | Qt.AlignBottom) : Qt.AlignBottom
+        //extraWidth:     instrumentPanel.extraValuesWidth/4
     }
 
     FlyViewInstrumentPanel {
         id:         instrumentPanel
-        visible:    QGroundControl.corePlugin.options.flyView.showInstrumentPanel && _showSingleVehicleUI
+        visible:    !_showAdditionalIndicators//QGroundControl.corePlugin.options.flyView.showInstrumentPanel && _showSingleVehicleUI
     }
 }

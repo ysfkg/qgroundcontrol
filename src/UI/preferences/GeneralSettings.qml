@@ -176,7 +176,7 @@ SettingsPage {
     SettingsGroupLayout {
         Layout.fillWidth:   true
         heading:            qsTr("Brand Image")
-        visible:            _brandImageSettings.visible && !ScreenTools.isMobile
+        visible:            true//_brandImageSettings.visible && !ScreenTools.isMobile
         
         RowLayout {
             Layout.fillWidth:   true

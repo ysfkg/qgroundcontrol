@@ -199,7 +199,7 @@ SettingsPage {
 
         FactCheckBoxSlider {
             Layout.fillWidth:   true
-            text:               qsTr("Show additional heading indicators on Compass")
+            text:               qsTr("Disable Compass")
             visible:            _showAdditionalIndicatorsCompass.visible
             fact:               _showAdditionalIndicatorsCompass
         }
