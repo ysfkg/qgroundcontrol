@@ -1,0 +1,50 @@
+---
+description: QGroundControl mimari bağlamı — PROJECT_CONTEXT.md referansı ve kritik kurallar
+alwaysApply: true
+---
+
+# QGroundControl Proje Bağlamı
+
+Bu repo QGC (C++/Qt6/QML) kod tabanıdır. Mimari karar, yeni özellik veya dosya konumu sorularında **önce** kök dizindeki [`PROJECT_CONTEXT.md`](../../PROJECT_CONTEXT.md) dosyasını oku ve oradaki yolları/sınıfları referans al.
+
+## Hızlı Mimari Özet
+
+- **MVVM benzeri:** C++ model (`Vehicle`, `Fact`, `FactGroup`) + QML view; veri `Q_PROPERTY` / `Fact::valueChanged` ile akar.
+- **Monolitik build:** Tüm modüller `src/CMakeLists.txt` → `qt_add_library(QGC STATIC)` altında birleşir.
+- **QML giriş:** `src/UI/MainRootWindow.qml` (`qrc:/qml/MainRootWindow.qml`); global API: `import QGroundControl` → `QGroundControlQmlGlobal`.
+- **MAVLink akışı:** `LinkManager` → `MAVLinkProtocol::receiveBytes` → `MultiVehicleManager` (HEARTBEAT) → `Vehicle::_mavlinkMessageReceived` → `FactGroup::handleMessage` → QML.
+- **Vehicle alt sınıfı yok:** Firmware/araç farkları `FirmwarePlugin` + `AutoPilotPlugin` ile çözülür; filo yönetimi `MultiVehicleManager` (`VehicleManager` diye sınıf yok).
+
+## Kritik Singleton Erişimi
+
+| C++ | QML |
+|-----|-----|
+| `LinkManager::instance()` | `QGroundControl.linkManager` |
+| `MultiVehicleManager::instance()` | `QGroundControl.multiVehicleManager` |
+| `SettingsManager::instance()` | `QGroundControl.settingsManager` |
+| `QGCCorePlugin::instance()` | `QGroundControl.corePlugin` |
+| `qgcApp()` | — |
+
+Per-vehicle: `vehicle.missionManager`, `vehicle.parameterManager`, `vehicle.autopilotPlugin`.
+
+## Yeni Özellik — Hangi Dosya?
+
+| Görev | Başlangıç noktası |
+|-------|-------------------|
+| QML ekran/sekme | `MainRootWindow.qml`, `QGCCorePlugin::analyzePages()`, `SettingsPagesModel.qml` |
+| Paylaşılan kontrol | `src/QmlControls/`, `qmldir`, `qgroundcontrol.qrc` |
+| Telemetri / MAVLink | `src/Vehicle/FactGroups/`, `Vehicle::_commonInit()`, `Vehicle.cc` switch |
+| Firmware davranışı | `src/FirmwarePlugin/PX4/` veya `APM/` |
+| Setup UI | `src/AutoPilotPlugins/`, `VehicleComponent`, `SetupView.qml` |
+| Mission item | `src/MissionManager/`, `ComplexMissionItem`, `MissionCommandTree` |
+| QML type kaydı | `QGCApplication::init()` |
+| Yeni C++ dosyası | İlgili modül `CMakeLists.txt` → `target_sources(QGC PRIVATE ...)` |
+
+## Asla Yapma
+
+- `Vehicle` alt sınıfı oluşturma; `FirmwarePlugin` / `FactGroup` kullan.
+- Link'e doğrudan `_writeBytes()` — `writeBytesThreadSafe()` veya `Vehicle::sendMessageOnLinkThreadSafe()` kullan.
+- MAVLink parse'ı QML'de yapma; telemetri için `Fact`/`FactGroup` atla.
+- Yeni `.cc` ekleyip CMake `target_sources` unutma; yeni QML ekleyip `qgroundcontrol.qrc` unutma.
+
+Detaylı playbook, klasör listesi ve thread safety kuralları için `PROJECT_CONTEXT.md` dosyasına bak.
